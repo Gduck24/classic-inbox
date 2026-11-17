@@ -25,6 +25,8 @@ import {
   ArrowLeft,
   Send,
   RotateCcw,
+  Reply,
+  Forward,
 } from 'lucide-react';
 
 const BUNDLE_META = {
@@ -90,6 +92,9 @@ const DEFAULT_RULES = [
 const INITIAL_EMAILS = [
   {
     id: 'e1',
+    gmailId: null,
+    threadId: null,
+    messageIdHeader: null,
     senderName: 'CARS_social, me',
     senderEmail: 'socialmedia@gm.com',
     subject: 'Help for long time Chevy Family - Gduck24 on GM-Trucks.com',
@@ -105,6 +110,9 @@ const INITIAL_EMAILS = [
   },
   {
     id: 'e2',
+    gmailId: null,
+    threadId: null,
+    messageIdHeader: null,
     senderName: 'Kiel, me',
     senderEmail: 'kiel@classicchevy.com',
     subject: 'Your 2024 GMC Sierra 1500 Awaits? Test Drive This Week',
@@ -133,6 +141,15 @@ function decodeBase64Url(data) {
   } catch {
     return '';
   }
+}
+
+function encodeBase64Url(str) {
+  const bytes = new TextEncoder().encode(str);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 function extractGmailBodies(payload) {
@@ -210,6 +227,9 @@ function parseEmlContent(rawText, fileName) {
 
   return {
     id: `eml-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    gmailId: null,
+    threadId: null,
+    messageIdHeader: null,
     senderName,
     senderEmail,
     subject,
@@ -260,8 +280,15 @@ export default function App() {
 
   const [newRule, setNewRule] = useState({ name: '', field: 'sender', pattern: '', bundle: 'Updates' });
   const [googleClientId, setGoogleClientId] = useState(() => localStorage.getItem('classic_inbox_client_id') || '');
-  const [gmailConnected, setGmailConnected] = useState(false);
-  const [composeForm, setComposeForm] = useState({ to: '', subject: '', body: '' });
+  const [accessToken, setAccessToken] = useState(null);
+  const [composeForm, setComposeForm] = useState({
+    mode: 'new',
+    to: '',
+    subject: '',
+    body: '',
+    threadId: null,
+    inReplyTo: null,
+  });
 
   useEffect(() => {
     try {
@@ -309,6 +336,20 @@ export default function App() {
     });
   }, [classifiedEmails, activeNav, pinnedOnly, searchQuery]);
 
+  const modifyGmailLabels = async (gmailId, addLabelIds = [], removeLabelIds = []) => {
+    if (!accessToken || !gmailId) return;
+    try {
+      await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailId}/modify`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ addLabelIds, removeLabelIds }),
+      });
+    } catch {}
+  };
+
   const togglePin = (id, ev) => {
     ev?.stopPropagation();
     setEmails((prev) =>
@@ -320,13 +361,26 @@ export default function App() {
 
   const markDone = (id, ev) => {
     ev?.stopPropagation();
+    const target = emails.find((e) => e.id === id);
+    if (target?.gmailId) modifyGmailLabels(target.gmailId, [], ['INBOX']);
     setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, status: 'done', pinned: false } : e)));
     if (openEmailId === id) setOpenEmailId(null);
-    showToast('Marked Done');
+    showToast(accessToken && target?.gmailId ? 'Archived in Gmail' : 'Marked Done');
+  };
+
+  const trashEmail = (id, ev) => {
+    ev?.stopPropagation();
+    const target = emails.find((e) => e.id === id);
+    if (target?.gmailId) modifyGmailLabels(target.gmailId, ['TRASH'], ['INBOX']);
+    setEmails((prev) => prev.filter((e) => e.id !== id));
+    if (openEmailId === id) setOpenEmailId(null);
+    showToast('Moved to Trash');
   };
 
   const moveBackToInbox = (id, ev) => {
     ev?.stopPropagation();
+    const target = emails.find((e) => e.id === id);
+    if (target?.gmailId) modifyGmailLabels(target.gmailId, ['INBOX'], []);
     setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, status: 'inbox', snoozedUntil: null } : e)));
     showToast('Moved back to Inbox');
   };
@@ -341,12 +395,83 @@ export default function App() {
     showToast(`Snoozed until ${label}`);
   };
 
+  const openReplyComposer = (email) => {
+    const cleanSubj = /^re:/i.test(email.subject) ? email.subject : `Re: ${email.subject}`;
+    setComposeForm({
+      mode: 'reply',
+      to: email.senderEmail,
+      subject: cleanSubj,
+      body: `\n\n--- On ${email.timeLabel}, ${email.senderName} wrote: ---\n${email.body}`,
+      threadId: email.threadId || null,
+      inReplyTo: email.messageIdHeader || null,
+    });
+    setComposeOpen(true);
+  };
+
+  const openForwardComposer = (email) => {
+    const cleanSubj = /^fwd:/i.test(email.subject) ? email.subject : `Fwd: ${email.subject}`;
+    setComposeForm({
+      mode: 'forward',
+      to: '',
+      subject: cleanSubj,
+      body: `\n\n---------- Forwarded message ---------\nFrom: ${email.senderName} <${email.senderEmail}>\nSubject: ${email.subject}\n\n${email.body}`,
+      threadId: null,
+      inReplyTo: null,
+    });
+    setComposeOpen(true);
+  };
+
+  const handleSendEmail = async () => {
+    if (!composeForm.to.trim()) {
+      showToast('Enter a recipient email address');
+      return;
+    }
+
+    if (accessToken) {
+      try {
+        const headers = [
+          `To: ${composeForm.to.trim()}`,
+          `Subject: ${composeForm.subject}`,
+          'Content-Type: text/plain; charset="UTF-8"',
+        ];
+        if (composeForm.inReplyTo) {
+          headers.push(`In-Reply-To: ${composeForm.inReplyTo}`);
+          headers.push(`References: ${composeForm.inReplyTo}`);
+        }
+        const rawMime = `${headers.join('\r\n')}\r\n\r\n${composeForm.body}`;
+        const payload = { raw: encodeBase64Url(rawMime) };
+        if (composeForm.threadId) payload.threadId = composeForm.threadId;
+
+        const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (res.ok) {
+          setComposeOpen(false);
+          setComposeForm({ mode: 'new', to: '', subject: '', body: '', threadId: null, inReplyTo: null });
+          showToast('Sent via Gmail!');
+          return;
+        }
+      } catch {}
+    }
+
+    setComposeOpen(false);
+    setComposeForm({ mode: 'new', to: '', subject: '', body: '', threadId: null, inReplyTo: null });
+    showToast(accessToken ? 'Failed to send via Gmail' : 'Connect Gmail first to send live emails');
+  };
+
   const sweepBundle = (bucket, bundleName, ev) => {
     ev?.stopPropagation();
     setEmails((prev) =>
       prev.map((e) => {
         const b = classifyEmail(e, rules);
         if (e.status === 'inbox' && e.bucket === bucket && b === bundleName && !e.pinned) {
+          if (e.gmailId) modifyGmailLabels(e.gmailId, [], ['INBOX']);
           return { ...e, status: 'done' };
         }
         return e;
@@ -357,7 +482,13 @@ export default function App() {
 
   const sweepBucket = (bucket) => {
     setEmails((prev) =>
-      prev.map((e) => (e.status === 'inbox' && e.bucket === bucket && !e.pinned ? { ...e, status: 'done' } : e))
+      prev.map((e) => {
+        if (e.status === 'inbox' && e.bucket === bucket && !e.pinned) {
+          if (e.gmailId) modifyGmailLabels(e.gmailId, [], ['INBOX']);
+          return { ...e, status: 'done' };
+        }
+        return e;
+      })
     );
     showToast(`Swept unpinned items in ${bucket}`);
   };
@@ -407,10 +538,10 @@ export default function App() {
       }
       const client = window.google.accounts.oauth2.initTokenClient({
         client_id: googleClientId.trim(),
-        scope: 'https://www.googleapis.com/auth/gmail.modify',
+        scope: 'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send',
         callback: async (tokenResponse) => {
           if (tokenResponse?.access_token) {
-            setGmailConnected(true);
+            setAccessToken(tokenResponse.access_token);
             setConnectModalOpen(false);
             showToast('Connected to Gmail! Downloading full threads...');
             try {
@@ -434,6 +565,7 @@ export default function App() {
                     const headers = msgData.payload?.headers || [];
                     const from = headers.find((h) => h.name.toLowerCase() === 'from')?.value || 'Gmail Sender';
                     const subject = headers.find((h) => h.name.toLowerCase() === 'subject')?.value || '(No Subject)';
+                    const messageIdHeader = headers.find((h) => h.name.toLowerCase() === 'message-id')?.value || null;
                     const internalTs = Number(msgData.internalDate || Date.now());
                     const msgDate = new Date(internalTs);
 
@@ -452,6 +584,9 @@ export default function App() {
 
                     return {
                       id: `gmail-${m.id}`,
+                      gmailId: m.id,
+                      threadId: msgData.threadId || null,
+                      messageIdHeader,
                       senderName: emailMatch ? from.replace(/<[^>]+>/, '').replace(/"/g, '').trim() : from,
                       senderEmail: emailMatch ? emailMatch[1] : from,
                       subject,
@@ -522,6 +657,7 @@ export default function App() {
         key={email.id}
         onClick={() => {
           setOpenEmailId(email.id);
+          if (email.unread && email.gmailId) modifyGmailLabels(email.gmailId, [], ['UNREAD']);
           setEmails((prev) => prev.map((item) => (item.id === email.id ? { ...item, unread: false } : item)));
         }}
         className={`group relative flex items-center gap-3 px-4 py-3 bg-white hover:bg-gray-50 cursor-pointer border-b border-gray-100 transition-colors ${
@@ -676,7 +812,7 @@ export default function App() {
             className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-full text-xs font-medium transition-colors"
           >
             <KeyRound className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">{gmailConnected ? 'Sync Gmail' : 'Connect / .EML'}</span>
+            <span className="hidden md:inline">{accessToken ? 'Sync Gmail' : 'Connect / .EML'}</span>
           </button>
         </div>
       </header>
@@ -760,7 +896,8 @@ export default function App() {
           <div className="max-w-4xl mx-auto pb-20">
             {openEmail ? (
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2 bg-gray-50">
+                {/* Action Toolbar */}
+                <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2 bg-gray-50">
                   <button
                     onClick={() => setOpenEmailId(null)}
                     className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-900"
@@ -768,11 +905,12 @@ export default function App() {
                     <ArrowLeft className="w-4 h-4" />
                     <span>Back</span>
                   </button>
-                  <div className="flex items-center gap-2">
+
+                  <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
                     <select
                       value={openEmail.bundle}
                       onChange={(e) => assignSenderRule(openEmail, e.target.value)}
-                      className="text-xs border border-gray-300 rounded px-2 py-1 bg-white text-gray-700"
+                      className="text-xs border border-gray-300 rounded px-2 py-1.5 bg-white text-gray-700"
                       title="Always route this sender to bundle"
                     >
                       {Object.keys(BUNDLE_META).map((bKey) => (
@@ -781,20 +919,81 @@ export default function App() {
                         </option>
                       ))}
                     </select>
+
+                    <button
+                      onClick={() => openReplyComposer(openEmail)}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded hover:bg-gray-200 text-xs font-medium text-gray-700"
+                      title="Reply"
+                    >
+                      <Reply className="w-4 h-4" />
+                      <span className="hidden sm:inline">Reply</span>
+                    </button>
+
+                    <button
+                      onClick={() => openForwardComposer(openEmail)}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded hover:bg-gray-200 text-xs font-medium text-gray-700"
+                      title="Forward"
+                    >
+                      <Forward className="w-4 h-4" />
+                      <span className="hidden sm:inline">Forward</span>
+                    </button>
+
+                    <div className="relative">
+                      <button
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          setSnoozePickerId(snoozePickerId === openEmail.id ? null : openEmail.id);
+                        }}
+                        className="p-2 rounded-full hover:bg-gray-200 text-gray-600"
+                        title="Snooze"
+                      >
+                        <Clock className="w-4 h-4" />
+                      </button>
+                      {snoozePickerId === openEmail.id && (
+                        <div
+                          onClick={(ev) => ev.stopPropagation()}
+                          className="absolute right-0 top-9 z-30 w-44 bg-white rounded-lg shadow-xl border border-gray-200 py-1 text-sm"
+                        >
+                          {['Later today (6 PM)', 'Tomorrow (8 AM)', 'Next week (Mon)'].map((slot) => (
+                            <button
+                              key={slot}
+                              onClick={(ev) => snoozeEmail(openEmail.id, slot, ev)}
+                              className="w-full text-left px-3 py-2 hover:bg-amber-50 text-gray-700"
+                            >
+                              {slot}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
                     <button
                       onClick={(ev) => togglePin(openEmail.id, ev)}
                       className={`p-2 rounded-full hover:bg-gray-200 ${openEmail.pinned ? 'text-blue-600' : 'text-gray-500'}`}
+                      title="Pin"
                     >
                       <Pin className="w-4 h-4" />
                     </button>
+
+                    <button
+                      onClick={(ev) => trashEmail(openEmail.id, ev)}
+                      className="p-2 rounded-full hover:bg-red-100 text-gray-500 hover:text-red-600"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+
                     <button
                       onClick={(ev) => markDone(openEmail.id, ev)}
                       className="p-2 rounded-full hover:bg-emerald-100 text-emerald-600"
+                      title="Done / Archive"
                     >
                       <Check className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
+
+                {/* Email Body */}
                 <div className="p-5 sm:p-6">
                   <h2 className="text-xl font-semibold text-gray-900 mb-3">{openEmail.subject}</h2>
                   <div className="flex items-center justify-between text-sm text-gray-500 pb-4 mb-4 border-b border-gray-100">
@@ -810,11 +1009,29 @@ export default function App() {
                       title="Email Content"
                       srcDoc={openEmail.htmlBody}
                       sandbox="allow-popups allow-popups-to-escape-sandbox"
-                      className="w-full min-h-[520px] border-0 rounded bg-white"
+                      className="w-full min-h-[480px] border-0 rounded bg-white"
                     />
                   ) : (
                     <div className="text-sm text-gray-800 whitespace-pre-line leading-relaxed">{openEmail.body}</div>
                   )}
+
+                  {/* Bottom Quick Reply / Forward Bar */}
+                  <div className="mt-6 pt-4 border-t border-gray-100 flex items-center gap-3">
+                    <button
+                      onClick={() => openReplyComposer(openEmail)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full border border-gray-300 hover:bg-gray-50 text-sm font-medium text-gray-700"
+                    >
+                      <Reply className="w-4 h-4" />
+                      <span>Reply</span>
+                    </button>
+                    <button
+                      onClick={() => openForwardComposer(openEmail)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full border border-gray-300 hover:bg-gray-50 text-sm font-medium text-gray-700"
+                    >
+                      <Forward className="w-4 h-4" />
+                      <span>Forward</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : activeNav === 'inbox' ? (
@@ -933,7 +1150,10 @@ export default function App() {
       </div>
 
       <button
-        onClick={() => setComposeOpen(true)}
+        onClick={() => {
+          setComposeForm({ mode: 'new', to: '', subject: '', body: '', threadId: null, inReplyTo: null });
+          setComposeOpen(true);
+        }}
         className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-[#DB4437] hover:bg-[#c53929] text-white shadow-lg flex items-center justify-center transition-transform hover:scale-105 z-30"
         style={{ marginBottom: 'env(safe-area-inset-bottom)' }}
         title="Compose"
@@ -1084,9 +1304,15 @@ export default function App() {
 
       {composeOpen && (
         <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-md w-full shadow-2xl overflow-hidden">
+          <div className="bg-white rounded-xl max-w-lg w-full shadow-2xl overflow-hidden">
             <div className="px-4 py-3 bg-gray-800 text-white flex items-center justify-between">
-              <span className="text-sm font-medium">New Message</span>
+              <span className="text-sm font-medium">
+                {composeForm.mode === 'reply'
+                  ? 'Reply'
+                  : composeForm.mode === 'forward'
+                  ? 'Forward Message'
+                  : 'New Message'}
+              </span>
               <button onClick={() => setComposeOpen(false)}>
                 <X className="w-4 h-4" />
               </button>
@@ -1107,7 +1333,7 @@ export default function App() {
                 className="w-full text-sm border-b border-gray-200 pb-2 focus:outline-none"
               />
               <textarea
-                rows={5}
+                rows={7}
                 placeholder="Write your message..."
                 value={composeForm.body}
                 onChange={(e) => setComposeForm({ ...composeForm, body: e.target.value })}
@@ -1115,15 +1341,11 @@ export default function App() {
               />
               <div className="flex justify-end">
                 <button
-                  onClick={() => {
-                    setComposeOpen(false);
-                    setComposeForm({ to: '', subject: '', body: '' });
-                    showToast('Message queued');
-                  }}
+                  onClick={handleSendEmail}
                   className="flex items-center gap-1.5 bg-[#4285F4] text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-blue-600"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>Send</span>
+                  <span>{accessToken ? 'Send via Gmail' : 'Send'}</span>
                 </button>
               </div>
             </div>
