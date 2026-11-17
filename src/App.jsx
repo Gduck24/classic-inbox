@@ -32,7 +32,7 @@ import {
   User,
   Database,
   Tag,
-  Edit3,
+  ArrowRight,
 } from 'lucide-react';
 
 const ICON_MAP = {
@@ -136,9 +136,12 @@ export default function App() {
   const [expandedBundles, setExpandedBundles] = useState({});
   const [openEmailId, setOpenEmailId] = useState(null);
   const [newTaskText, setNewTaskText] = useState('');
-  const [editingTaskId, setEditingTaskId] = useState(null);
+  
+  // Task Detail / Edit View State
+  const [selectedTask, setSelectedTask] = useState(null);
   const [editTitle, setEditTitle] = useState('');
   const [editDetails, setEditDetails] = useState('');
+
   const [toast, setToast] = useState(null);
   const [isSampleMode, setIsSampleMode] = useState(true);
 
@@ -220,17 +223,18 @@ export default function App() {
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: !t.done } : t)));
   };
 
-  const deleteTask = (task, ev) => {
-    ev?.stopPropagation();
-    setTasks((prev) => prev.filter((t) => t.id !== task.id));
-    if (editingTaskId === task.id) setEditingTaskId(null);
+  const deleteTask = (id) => {
+    setTasks((prev) => prev.filter((t) => t.id !== id));
+    if (selectedTask?.id === id) setSelectedTask(null);
+    showToast('Task deleted');
   };
 
-  const saveTaskEdit = (id) => {
+  const saveSelectedTask = () => {
+    if (!selectedTask) return;
     setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, text: editTitle, details: editDetails } : t))
+      prev.map((t) => (t.id === selectedTask.id ? { ...t, text: editTitle, details: editDetails } : t))
     );
-    setEditingTaskId(null);
+    setSelectedTask(null);
     showToast('Task updated');
   };
 
@@ -417,115 +421,147 @@ export default function App() {
           </div>
         </main>
 
-        {/* Gmail-Style Exact Right Panel & Interactive Tasks */}
+        {/* Gmail-Style Exact Right Panel & Tasks Editor */}
         <div className="flex shrink-0 z-20">
           {activeRightPanel && (
-            <aside className={`w-80 border-l flex flex-col ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
+            <aside className={`w-80 border-l flex flex-col relative ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
               {activeRightPanel === 'tasks' ? (
-                <>
-                  <div className="px-4 pt-4 pb-2 flex items-center justify-between border-b border-gray-100 dark:border-gray-800">
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-bold tracking-widest text-gray-400 uppercase">TASKS</span>
-                      <div className="flex items-center gap-1 text-sm font-semibold text-gray-800 dark:text-gray-100 cursor-pointer">
-                        <span>To-do</span>
-                        <ChevronDown className="w-4 h-4 text-gray-500" />
+                selectedTask ? (
+                  /* Task Details Slide-out View matching Gmail */
+                  <div className="absolute inset-0 z-30 flex flex-col bg-white dark:bg-gray-900 p-4">
+                    <div className="flex items-center justify-between pb-3 border-b mb-4">
+                      <button
+                        onClick={() => setSelectedTask(null)}
+                        className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline"
+                      >
+                        <ArrowLeft className="w-4 h-4" /> Details
+                      </button>
+                      <button onClick={() => setSelectedTask(null)} className="p-1 hover:bg-gray-100 rounded">
+                        <X className="w-4 h-4 text-gray-500" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-4 flex-1 overflow-y-auto">
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Title</label>
+                        <input
+                          type="text"
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          className="w-full text-sm font-semibold border-b pb-1 focus:outline-none focus:border-blue-600 bg-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Details</label>
+                        <textarea
+                          value={editDetails}
+                          onChange={(e) => setEditDetails(e.target.value)}
+                          placeholder="Add details / equipment list..."
+                          className="w-full text-xs border rounded p-2.5 h-32 resize-none bg-transparent focus:outline-none focus:border-blue-600"
+                        />
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 text-gray-500">
-                      <button title="Open in full tab" className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"><ExternalLink className="w-4 h-4" /></button>
-                      <button onClick={() => setActiveRightPanel(null)} title="Close side panel" className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"><X className="w-4 h-4" /></button>
+
+                    <div className="pt-3 border-t flex items-center justify-between">
+                      <button
+                        onClick={() => { deleteTask(selectedTask.id); setSelectedTask(null); }}
+                        className="text-red-500 hover:text-red-600 p-1.5 rounded"
+                        title="Delete task"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <div className="flex gap-2">
+                        <button onClick={() => setSelectedTask(null)} className="text-xs px-3 py-1.5 text-gray-600">Cancel</button>
+                        <button onClick={saveSelectedTask} className="text-xs px-4 py-1.5 bg-blue-600 text-white rounded font-medium shadow-sm">Save</button>
+                      </div>
                     </div>
                   </div>
-
-                  <div className="p-4 flex-1 overflow-y-auto space-y-4">
-                    <div className="relative flex items-center border-2 border-blue-600 rounded-full px-4 py-2.5 shadow-sm">
-                      <CheckSquare className="w-5 h-5 text-blue-600 mr-3 shrink-0" />
-                      <input
-                        type="text"
-                        value={newTaskText}
-                        onChange={(e) => setNewTaskText(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && (addTask(newTaskText), setNewTaskText(''))}
-                        placeholder="Add a task"
-                        className="w-full text-sm bg-transparent placeholder-blue-600/70 text-blue-900 dark:text-blue-200 focus:outline-none"
-                      />
-                      <button onClick={() => (addTask(newTaskText), setNewTaskText(''))} className="text-xs bg-blue-600 text-white px-2.5 py-1 rounded-full font-medium">Add</button>
+                ) : (
+                  <>
+                    {/* Tasks Header matching Gmail */}
+                    <div className="px-4 pt-4 pb-2 flex items-center justify-between border-b border-gray-100 dark:border-gray-800">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-bold tracking-widest text-gray-400 uppercase">TASKS</span>
+                        <div className="flex items-center gap-1 text-sm font-semibold text-gray-800 dark:text-gray-100 cursor-pointer">
+                          <span>To-do</span>
+                          <ChevronDown className="w-4 h-4 text-gray-500" />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 text-gray-500">
+                        <button title="Open in full tab" className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"><ExternalLink className="w-4 h-4" /></button>
+                        <button onClick={() => setActiveRightPanel(null)} title="Close side panel" className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"><X className="w-4 h-4" /></button>
+                      </div>
                     </div>
 
-                    <div className="space-y-3 pt-2">
-                      {tasks.length === 0 ? (
-                        <div className="text-xs text-gray-400 text-center py-6">No tasks found.</div>
-                      ) : (
-                        tasks.map((t) => (
-                          <div key={t.id} className="p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 border border-transparent hover:border-gray-200 dark:hover:border-gray-700 transition-all">
-                            {editingTaskId === t.id ? (
-                              <div className="space-y-2">
-                                <input
-                                  type="text"
-                                  value={editTitle}
-                                  onChange={(e) => setEditTitle(e.target.value)}
-                                  className="w-full text-xs font-medium border rounded px-2 py-1 bg-transparent"
-                                  placeholder="Task title"
-                                />
-                                <textarea
-                                  value={editDetails}
-                                  onChange={(e) => setEditDetails(e.target.value)}
-                                  className="w-full text-xs border rounded p-2 bg-transparent h-16 resize-none"
-                                  placeholder="Add details / equipment list..."
-                                />
-                                <div className="flex justify-end gap-2">
-                                  <button onClick={() => setEditingTaskId(null)} className="text-xs px-2.5 py-1 text-gray-500">Cancel</button>
-                                  <button onClick={() => saveTaskEdit(t.id)} className="text-xs px-3 py-1 bg-blue-600 text-white rounded font-medium">Save</button>
-                                </div>
+                    <div className="p-4 flex-1 overflow-y-auto space-y-4">
+                      {/* Pill-shaped Add Task Input Bar matching Gmail exactly */}
+                      <div className="relative flex items-center border-2 border-blue-600 rounded-full px-4 py-2.5 shadow-sm">
+                        <CheckSquare className="w-5 h-5 text-blue-600 mr-3 shrink-0" />
+                        <input
+                          type="text"
+                          value={newTaskText}
+                          onChange={(e) => setNewTaskText(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && (addTask(newTaskText), setNewTaskText(''))}
+                          placeholder="Add a task"
+                          className="w-full text-sm bg-transparent placeholder-blue-600/70 text-blue-900 dark:text-blue-200 focus:outline-none"
+                        />
+                        <button onClick={() => (addTask(newTaskText), setNewTaskText(''))} className="text-xs bg-blue-600 text-white px-3 py-1 rounded-full font-medium">Add</button>
+                      </div>
+
+                      {/* Task Items List matching Gmail */}
+                      <div className="space-y-1 pt-2">
+                        {tasks.length === 0 ? (
+                          <div className="text-xs text-gray-400 text-center py-6">No tasks found.</div>
+                        ) : (
+                          tasks.map((t) => (
+                            <div
+                              key={t.id}
+                              onClick={() => {
+                                setSelectedTask(t);
+                                setEditTitle(t.text);
+                                setEditDetails(t.details || '');
+                              }}
+                              className="group flex items-start gap-3 py-2.5 px-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/60 cursor-pointer border-b border-gray-100 dark:border-gray-800 last:border-b-0"
+                            >
+                              {/* Round Hollow Check Ring matching Gmail */}
+                              <div
+                                onClick={(ev) => toggleTask(t, ev)}
+                                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors ${t.done ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-400 hover:border-blue-600'}`}
+                              >
+                                {t.done && <Check className="w-3 h-3 stroke-[3]" />}
                               </div>
-                            ) : (
-                              <div className="flex items-start gap-3 group">
-                                <input
-                                  type="checkbox"
-                                  checked={t.done}
-                                  onChange={(ev) => toggleTask(t, ev)}
-                                  className="w-5 h-5 rounded-full border-2 border-gray-400 text-blue-600 focus:ring-0 mt-0.5 cursor-pointer shrink-0"
-                                />
-                                <div
-                                  className="flex-1 min-w-0 cursor-pointer"
-                                  onClick={() => {
-                                    setEditingTaskId(t.id);
-                                    setEditTitle(t.text);
-                                    setEditDetails(t.details || '');
-                                  }}
-                                >
-                                  <div className={`text-sm ${t.done ? 'line-through text-gray-400' : 'text-gray-800 dark:text-gray-200'}`}>
-                                    {t.text}
+
+                              <div className="flex-1 min-w-0">
+                                <div className={`text-sm ${t.done ? 'line-through text-gray-400' : 'text-gray-800 dark:text-gray-200 font-normal'}`}>
+                                  {t.text}
+                                </div>
+                                {t.details && (
+                                  <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/60 p-2 rounded border border-gray-100 dark:border-gray-800 leading-relaxed whitespace-pre-line">
+                                    {t.details}
                                   </div>
-                                  {t.details && (
-                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed whitespace-pre-line bg-gray-50 dark:bg-gray-900/50 p-2 rounded border border-gray-100 dark:border-gray-800">
-                                      {t.details}
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button
-                                    onClick={() => {
-                                      setEditingTaskId(t.id);
-                                      setEditTitle(t.text);
-                                      setEditDetails(t.details || '');
-                                    }}
-                                    className="text-gray-400 hover:text-blue-500 p-1"
-                                    title="Edit task"
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button onClick={(ev) => deleteTask(t, ev)} className="text-gray-400 hover:text-red-500 p-1" title="Delete task">
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        ))
-                      )}
+
+                              {/* Three-dot menu button matching Gmail */}
+                              <button
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  setSelectedTask(t);
+                                  setEditTitle(t.text);
+                                  setEditDetails(t.details || '');
+                                }}
+                                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 p-1"
+                                title="Edit task"
+                              >
+                                <MoreVertical className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </>
+                  </>
+                )
               ) : activeRightPanel === 'calendar' ? (
                 <>
                   <div className="p-3 border-b flex items-center justify-between text-xs font-semibold">
