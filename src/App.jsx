@@ -7,12 +7,10 @@ import {
   Check,
   CheckCheck,
   Inbox as InboxIcon,
-  Settings,
   ChevronDown,
   ChevronRight,
   Plus,
   Trash2,
-  KeyRound,
   X,
   Mail,
   Sparkles,
@@ -24,13 +22,15 @@ import {
   ArrowLeft,
   Moon,
   Sun,
-  FolderPlus,
   Calendar as CalendarIcon,
   ListTodo,
-  ArrowUp,
-  ArrowDown,
-  Tag,
+  ExternalLink,
+  MoreVertical,
+  CheckSquare,
+  Lightbulb,
+  User,
   Database,
+  Tag,
 } from 'lucide-react';
 
 const ICON_MAP = {
@@ -100,57 +100,19 @@ const SAMPLE_EMAILS = [
     pinned: false,
     unread: false,
   },
-  {
-    id: 'sample-4',
-    senderName: 'City Utility Billing',
-    senderEmail: 'billing@fortworthtexas.gov',
-    subject: 'Statement Ready: Monthly Utility Statement #FW-88492',
-    snippet: 'Your new statement is ready for review. Balance due: $142.50...',
-    body: 'Your monthly utility statement for your property in Fort Worth is now ready for review.\n\nBalance Due: $142.50\nDue Date: December 1st.\n\nLog in to your account portal to pay online.',
-    timeLabel: 'Yesterday',
-    bucket: 'Yesterday',
-    status: 'inbox',
-    pinned: false,
-    unread: false,
-  },
-  {
-    id: 'sample-5',
-    senderName: 'YETI Authorized Store',
-    senderEmail: 'orders@yeti.com',
-    subject: 'Order Confirmation #YT-99281 - Custom Laser Engraved Tumbler',
-    snippet: 'Thanks for your order! We are customizing your 30oz olive green YETI...',
-    body: 'Thanks for your order, Grayson!\n\nWe are currently laser engraving your custom graphics onto your 30oz olive green YETI tumbler.\n\nWe will email tracking information as soon as it ships out.',
-    timeLabel: 'Nov 7',
-    bucket: 'Earlier this month',
-    status: 'inbox',
-    pinned: false,
-    unread: false,
-  },
 ];
 
 const SAMPLE_TASKS = [
-  { id: 't1', text: 'Pick up steel stock for driveway gate post', done: false },
-  { id: 't2', text: 'Test TrackMan simulator spin rates with RCT balls', done: false },
-  { id: 't3', text: 'Review Chief Architect floor plan updates', done: true },
+  { id: 't1', text: 'Brad has heat gun', details: '', done: false },
+  { id: 't2', text: 'Aniston has', details: 'crowbar, sander, chisel, extension cord, caulk gun', done: false },
+  { id: 't3', text: 'RV strip', details: '', done: false },
+  { id: 't4', text: 'JJ has spring compressor', details: '', done: false },
 ];
 
 const SAMPLE_CALENDAR = [
   { id: 'c1', summary: 'Commercial Construction Site Walk', start: { dateTime: '2026-11-18T09:00:00-06:00' } },
   { id: 'c2', summary: 'Indoor Simulator League Match @ Five Iron', start: { dateTime: '2026-11-18T18:30:00-06:00' } },
 ];
-
-function decodeBase64Url(data) {
-  if (!data) return '';
-  try {
-    const base64 = data.replace(/-/g, '+').replace(/_/g, '/');
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return new TextDecoder('utf-8').decode(bytes);
-  } catch {
-    return '';
-  }
-}
 
 function classifyEmail(email, rules, bundleMap) {
   if (email.isReminder) return 'Primary';
@@ -179,7 +141,10 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(false);
   const [activeNav, setActiveNav] = useState('inbox');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  
+  // Gmail right panel state: 'tasks' | 'calendar' | 'keep' | 'contacts' | null
   const [activeRightPanel, setActiveRightPanel] = useState('tasks');
+
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedBundles, setExpandedBundles] = useState({});
   const [openEmailId, setOpenEmailId] = useState(null);
@@ -214,12 +179,12 @@ export default function App() {
     }
   };
 
-  const classifiedEmails = useMemo(() => {
+  const classifiedEmails = useMemo => {
     return emails.map((e) => ({ ...e, bundle: classifyEmail(e, rules, bundleMap) }));
-  }, [emails, rules, bundleMap]);
+  };
 
   const visibleEmails = useMemo(() => {
-    return classifiedEmails.filter((e) => {
+    return classifiedEmails().filter((e) => {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const hay = `${e.senderName} ${e.senderEmail} ${e.subject} ${e.snippet}`.toLowerCase();
@@ -255,23 +220,9 @@ export default function App() {
     showToast(`Swept unpinned items in ${bucket}`);
   };
 
-  const sweepBundle = (bucket, bundleName, ev) => {
-    ev?.stopPropagation();
-    setEmails((prev) =>
-      prev.map((e) => {
-        const b = classifyEmail(e, rules, bundleMap);
-        if (e.status === 'inbox' && e.bucket === bucket && b === bundleName && !e.pinned) {
-          return { ...e, status: 'done' };
-        }
-        return e;
-      })
-    );
-    showToast(`Swept ${bundleName} in ${bucket}`);
-  };
-
   const addSandboxTask = (text) => {
     if (!text.trim()) return;
-    setTasks((prev) => [{ id: `task-${Date.now()}`, text: text.trim(), done: false }, ...prev]);
+    setTasks((prev) => [{ id: `task-${Date.now()}`, text: text.trim(), details: '', done: false }, ...prev]);
   };
 
   const toggleTask = (task) => {
@@ -315,7 +266,7 @@ export default function App() {
   };
 
   const buckets = ['Today', 'Yesterday', 'Earlier this month'];
-  const openEmail = classifiedEmails.find((e) => e.id === openEmailId);
+  const openEmail = classifiedEmails().find((e) => e.id === openEmailId);
 
   return (
     <div className={`h-full flex flex-col overflow-hidden ${darkMode ? 'bg-gray-950 text-gray-100' : 'bg-[#f2f2f2] text-gray-900'}`}>
@@ -444,9 +395,6 @@ export default function App() {
                                   {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
                                 </div>
                               </div>
-                              <button onClick={(ev) => sweepBundle(bucket, bundleName, ev)} className="p-1.5 rounded text-emerald-500 hover:bg-emerald-500/10">
-                                <CheckCheck className="w-4 h-4" />
-                              </button>
                             </div>
                             {isExpanded && items.map((item) => renderEmailRow(item, true))}
                           </div>
@@ -468,68 +416,128 @@ export default function App() {
           </div>
         </main>
 
-        {/* Gmail-Style Far Right Icon Strip & Flyout Panel */}
+        {/* Gmail-Style Exact Right Panel & Add-on Rail */}
         <div className="flex shrink-0 z-20">
           {activeRightPanel && (
             <aside className={`w-80 border-l flex flex-col ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
-              <div className="p-3 border-b flex items-center justify-between text-xs font-semibold">
-                <span>{activeRightPanel === 'tasks' ? 'Google Tasks' : 'Google Calendar'}</span>
-                <button onClick={() => setActiveRightPanel(null)}><X className="w-4 h-4 text-gray-400" /></button>
-              </div>
-              <div className="p-3 space-y-4 flex-1 overflow-y-auto">
-                {activeRightPanel === 'tasks' ? (
-                  <div>
-                    <div className="flex gap-1 mb-3">
+              {activeRightPanel === 'tasks' ? (
+                <>
+                  {/* Tasks Flyout Header matching Gmail */}
+                  <div className="px-4 pt-4 pb-2 flex items-center justify-between border-b border-gray-100 dark:border-gray-800">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-bold tracking-widest text-gray-400 uppercase">TASKS</span>
+                      <div className="flex items-center gap-1 text-sm font-semibold text-gray-800 dark:text-gray-100 cursor-pointer">
+                        <span>To-do</span>
+                        <ChevronDown className="w-4 h-4 text-gray-500" />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-gray-500">
+                      <button title="Open in full tab" className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"><ExternalLink className="w-4 h-4" /></button>
+                      <button onClick={() => setActiveRightPanel(null)} title="Close side panel" className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"><X className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+
+                  {/* Tasks Body Content */}
+                  <div className="p-4 flex-1 overflow-y-auto space-y-4">
+                    {/* Pill-shaped Add Task Input Bar matching Gmail */}
+                    <div className="relative flex items-center border-2 border-blue-600 rounded-full px-4 py-2.5 shadow-sm">
+                      <CheckSquare className="w-5 h-5 text-blue-600 mr-3 shrink-0" />
                       <input
                         type="text"
                         value={newTaskText}
                         onChange={(e) => setNewTaskText(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && (addSandboxTask(newTaskText), setNewTaskText(''))}
-                        placeholder="Add a task..."
-                        className="flex-1 text-xs border rounded px-2.5 py-2 bg-transparent"
+                        placeholder="Add a task"
+                        className="w-full text-sm bg-transparent placeholder-blue-600/70 text-blue-900 dark:text-blue-200 focus:outline-none"
                       />
-                      <button onClick={() => (addSandboxTask(newTaskText), setNewTaskText(''))} className="bg-blue-600 text-white px-3 py-2 rounded text-xs font-medium">Add</button>
+                      <button className="absolute right-3 text-gray-400 hover:text-gray-600"><MoreVertical className="w-4 h-4" /></button>
                     </div>
-                    <div className="space-y-1.5">
+
+                    {/* Task Item List */}
+                    <div className="space-y-3 pt-2">
                       {tasks.map((t) => (
-                        <div key={t.id} className="flex items-center justify-between text-xs p-2 rounded bg-gray-500/5 border border-gray-100 dark:border-gray-800">
-                          <span className={t.done ? 'line-through text-gray-400' : ''}>{t.text}</span>
-                          <div className="flex gap-1">
-                            <button onClick={() => toggleTask(t)} className="text-emerald-500 p-1"><Check className="w-3.5 h-3.5" /></button>
-                            <button onClick={() => deleteTask(t)} className="text-red-500 p-1"><Trash2 className="w-3.5 h-3.5" /></button>
+                        <div key={t.id} className="flex items-start gap-3 group">
+                          <input
+                            type="checkbox"
+                            checked={t.done}
+                            onChange={() => toggleTask(t)}
+                            className="w-5 h-5 rounded-full border-2 border-gray-400 text-blue-600 focus:ring-0 mt-0.5 cursor-pointer shrink-0"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className={`text-sm ${t.done ? 'line-through text-gray-400' : 'text-gray-800 dark:text-gray-200'}`}>
+                              {t.text}
+                            </div>
+                            {t.details && (
+                              <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">
+                                {t.details}
+                              </div>
+                            )}
                           </div>
+                          <button onClick={() => deleteTask(t)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 p-1">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       ))}
                     </div>
                   </div>
-                ) : (
-                  <div className="space-y-2">
+                </>
+              ) : activeRightPanel === 'calendar' ? (
+                <>
+                  <div className="p-3 border-b flex items-center justify-between text-xs font-semibold">
+                    <span>Google Calendar</span>
+                    <button onClick={() => setActiveRightPanel(null)}><X className="w-4 h-4 text-gray-400" /></button>
+                  </div>
+                  <div className="p-3 space-y-2 flex-1 overflow-y-auto">
                     {calendarEvents.map((ev) => (
-                      <div key={ev.id} className="p-2.5 rounded bg-indigo-500/5 border-l-4 border-indigo-500 text-xs">
+                      <div key={ev.id} className="p-2.5 rounded bg-blue-500/5 border-l-4 border-blue-500 text-xs">
                         <div className="font-semibold">{ev.summary}</div>
                         <div className="text-[10px] text-gray-400 mt-0.5">{new Date(ev.start.dateTime).toLocaleString()}</div>
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
+                </>
+              ) : (
+                <div className="p-4 flex items-center justify-between text-xs font-semibold border-b">
+                  <span>{activeRightPanel.toUpperCase()} PANEL</span>
+                  <button onClick={() => setActiveRightPanel(null)}><X className="w-4 h-4 text-gray-400" /></button>
+                </div>
+              )}
             </aside>
           )}
 
-          <div className={`w-14 border-l flex flex-col items-center py-3 gap-4 shrink-0 ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
+          {/* Slim Icon Strip matching Google Workspace sidebar */}
+          <div className={`w-14 border-l flex flex-col items-center py-4 gap-6 shrink-0 ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-gray-50/80 border-gray-200'}`}>
             <button
               onClick={() => setActiveRightPanel(activeRightPanel === 'calendar' ? null : 'calendar')}
               title="Google Calendar"
-              className={`p-2.5 rounded-full transition-colors ${activeRightPanel === 'calendar' ? 'bg-blue-500/20 text-blue-500' : 'text-gray-500 hover:bg-gray-500/10'}`}
+              className={`p-2 rounded-lg transition-colors ${activeRightPanel === 'calendar' ? 'bg-blue-500/20 text-blue-600' : 'text-gray-600 hover:bg-gray-200/60 dark:text-gray-400'}`}
             >
               <CalendarIcon className="w-5 h-5 text-blue-600" />
             </button>
             <button
+              onClick={() => setActiveRightPanel(activeRightPanel === 'keep' ? null : 'keep')}
+              title="Google Keep"
+              className={`p-2 rounded-lg transition-colors ${activeRightPanel === 'keep' ? 'bg-yellow-500/20 text-yellow-600' : 'text-gray-600 hover:bg-gray-200/60 dark:text-gray-400'}`}
+            >
+              <Lightbulb className="w-5 h-5 text-amber-500" />
+            </button>
+            <button
               onClick={() => setActiveRightPanel(activeRightPanel === 'tasks' ? null : 'tasks')}
               title="Google Tasks"
-              className={`p-2.5 rounded-full transition-colors ${activeRightPanel === 'tasks' ? 'bg-blue-500/20 text-blue-500' : 'text-gray-500 hover:bg-gray-500/10'}`}
+              className={`p-2 rounded-lg transition-colors ${activeRightPanel === 'tasks' ? 'bg-blue-500/25 text-blue-600 shadow-sm' : 'text-gray-600 hover:bg-gray-200/60 dark:text-gray-400'}`}
             >
-              <ListTodo className="w-5 h-5 text-blue-600" />
+              <CheckSquare className="w-5 h-5 text-blue-600" />
+            </button>
+            <button
+              onClick={() => setActiveRightPanel(activeRightPanel === 'contacts' ? null : 'contacts')}
+              title="Google Contacts"
+              className={`p-2 rounded-lg transition-colors ${activeRightPanel === 'contacts' ? 'bg-blue-500/20 text-blue-600' : 'text-gray-600 hover:bg-gray-200/60 dark:text-gray-400'}`}
+            >
+              <User className="w-5 h-5 text-blue-500" />
+            </button>
+            <div className="w-6 h-[1px] bg-gray-300 dark:bg-gray-700 my-1" />
+            <button title="Get Add-ons" className="p-2 rounded-lg text-gray-600 hover:bg-gray-200/60 dark:text-gray-400">
+              <Plus className="w-5 h-5" />
             </button>
           </div>
         </div>
