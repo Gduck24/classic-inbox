@@ -35,6 +35,11 @@ import {
   StickyNote,
   FolderPlus,
   BellRing,
+  Calendar as CalendarIcon,
+  ListTodo,
+  ExternalLink,
+  PanelRightClose,
+  PanelRightOpen,
 } from 'lucide-react';
 
 const ICON_MAP = {
@@ -111,6 +116,11 @@ const INITIAL_EMAILS = [
     completedAt: null,
     unread: true,
   },
+];
+
+const INITIAL_TASKS = [
+  { id: 't1', text: 'Follow up on dealer warranty quote', done: false, due: 'Today' },
+  { id: 't2', text: 'Review Supabase + Stripe launch checklist', done: false, due: 'Tomorrow' },
 ];
 
 function decodeBase64Url(data) {
@@ -270,6 +280,18 @@ export default function App() {
     }
   });
 
+  const [tasks, setTasks] = useState(() => {
+    try {
+      const saved = localStorage.getItem('classic_inbox_tasks_v1');
+      return saved ? JSON.parse(saved) : INITIAL_TASKS;
+    } catch {
+      return INITIAL_TASKS;
+    }
+  });
+
+  const [calendarEvents, setCalendarEvents] = useState([]);
+  const [calendarError, setCalendarError] = useState(false);
+
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('classic_inbox_dark') === 'true');
   const [compactMode, setCompactMode] = useState(() => localStorage.getItem('classic_inbox_compact') === 'true');
 
@@ -277,6 +299,11 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth >= 768 : true
   );
+  const [rightPanelOpen, setRightPanelOpen] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
+  );
+  const [rightTab, setRightTab] = useState('all'); // 'all' | 'tasks' | 'calendar'
+
   const [pinnedOnly, setPinnedOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedBundles, setExpandedBundles] = useState({});
@@ -285,13 +312,12 @@ export default function App() {
   const [ruleModalOpen, setRuleModalOpen] = useState(false);
   const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
-  const [reminderModalOpen, setReminderModalOpen] = useState(false);
-  const [reminderText, setReminderText] = useState('');
+  const [newTaskText, setNewTaskText] = useState('');
   const [toast, setToast] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [nextPageToken, setNextPageToken] = useState(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
-  // Drag-and-drop & Mobile Swipe states
   const [draggedEmailId, setDraggedEmailId] = useState(null);
   const [dragOverTarget, setDragOverTarget] = useState(null);
   const [swipeState, setSwipeState] = useState({ id: null, deltaX: 0 });
@@ -338,6 +364,12 @@ export default function App() {
   }, [rules]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem('classic_inbox_tasks_v1', JSON.stringify(tasks));
+    } catch {}
+  }, [tasks]);
+
+  useEffect(() => {
     localStorage.setItem('classic_inbox_dark', String(darkMode));
   }, [darkMode]);
 
@@ -358,145 +390,180 @@ export default function App() {
     setTimeout(() => setToast(null), 3200);
   };
 
-  const fetchGmailMessages = useCallback(
-    async (token, pageToken = null) => {
-      if (!token) return;
-      setSyncing(true);
-      try {
-        const url = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages');
-        url.searchParams.set('maxResults', '100');
-        url.searchParams.set('q', 'in:inbox');
-        if (pageToken) url.searchParams.set('pageToken', pageToken);
+  const fetchCalendarEvents = useCallback(async (token) => {
+    if (!token) return;
+    try {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfRange = new Date(startOfDay.getTime() + 7 * 86400000);
 
-        const listRes = await fetch(url.toString(), {
-          headers: { Authorization: `Bearer ${token}` },
+      const url = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
+      url.searchParams.set('timeMin', startOfDay.toISOString());
+      url.searchParams.set('timeMax', endOfRange.toISOString());
+      url.searchParams.set('singleEvents', 'true');
+      url.searchParams.set('orderBy', 'startTime');
+      url.searchParams.set('maxResults', '15');
+
+      const res = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        setCalendarError(true);
+        return;
+      }
+
+      setCalendarError(false);
+      const data = await res.json();
+      setCalendarEvents(data.items || []);
+    } catch {
+      setCalendarError(true);
+    }
+  }, []);
+
+  const fetchGmailMessages = useCallback(async (token, pageToken = null) => {
+    if (!token) return;
+    setSyncing(true);
+    try {
+      const url = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages');
+      url.searchParams.set('maxResults', '100');
+      url.searchParams.set('q', 'in:inbox');
+      if (pageToken) url.searchParams.set('pageToken', pageToken);
+
+      const listRes = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (listRes.status === 401) {
+        localStorage.removeItem('classic_inbox_token');
+        localStorage.removeItem('classic_inbox_token_expiry');
+        setAccessToken(null);
+        setSessionExpired(true);
+        setSyncing(false);
+        return;
+      }
+
+      setSessionExpired(false);
+      const listData = await listRes.json();
+      setNextPageToken(listData.nextPageToken || null);
+
+      if (listData.messages) {
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        const startOfYesterday = startOfToday - 86400000;
+
+        const fetched = [];
+        for (let i = 0; i < listData.messages.length; i += 20) {
+          const chunk = listData.messages.slice(i, i + 20);
+          const chunkResults = await Promise.all(
+            chunk.map(async (m) => {
+              const msgRes = await fetch(
+                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`,
+                { headers: { Authorization: `Bearer ${token}` } }
+              );
+              const msgData = await msgRes.json();
+              const headers = msgData.payload?.headers || [];
+              const from = headers.find((h) => h.name.toLowerCase() === 'from')?.value || 'Gmail Sender';
+              const subject = headers.find((h) => h.name.toLowerCase() === 'subject')?.value || '(No Subject)';
+              const messageIdHeader = headers.find((h) => h.name.toLowerCase() === 'message-id')?.value || null;
+              const internalTs = Number(msgData.internalDate || Date.now());
+              const msgDate = new Date(internalTs);
+
+              let bucket = 'Earlier this month';
+              let timeLabel = msgDate.toLocaleDateString([], { month: 'short', day: 'numeric' });
+              if (internalTs >= startOfToday) {
+                bucket = 'Today';
+                timeLabel = msgDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+              } else if (internalTs >= startOfYesterday) {
+                bucket = 'Yesterday';
+                timeLabel = 'Yesterday';
+              }
+
+              const { plain, html } = extractGmailBodies(msgData.payload);
+              const emailMatch = from.match(/<([^>]+)>/);
+              const labelIds = msgData.labelIds || [];
+
+              return {
+                id: `gmail-${m.id}`,
+                isReminder: false,
+                gmailId: m.id,
+                threadId: msgData.threadId || null,
+                messageIdHeader,
+                gmailLabels: labelIds,
+                senderName: emailMatch ? from.replace(/<[^>]+>/, '').replace(/"/g, '').trim() : from,
+                senderEmail: emailMatch ? emailMatch[1] : from,
+                subject,
+                snippet: msgData.snippet || '',
+                body: plain || msgData.snippet || '(No plain-text body)',
+                htmlBody: html || null,
+                note: '',
+                timeLabel,
+                bucket,
+                status: 'inbox',
+                pinned: false,
+                snoozedUntil: null,
+                completedAt: null,
+                unread: labelIds.includes('UNREAD'),
+              };
+            })
+          );
+          fetched.push(...chunkResults);
+        }
+
+        setEmails((prev) => {
+          const localReminders = prev.filter((item) => item.isReminder);
+          const existingMap = new Map(prev.map((item) => [item.id, item]));
+          const merged = fetched.map((f) => {
+            const old = existingMap.get(f.id);
+            return old
+              ? {
+                  ...f,
+                  pinned: old.pinned,
+                  note: old.note || '',
+                  status: old.status === 'snoozed' ? 'snoozed' : 'inbox',
+                  snoozedUntil: old.snoozedUntil,
+                  manualBundle: old.manualBundle,
+                }
+              : f;
+          });
+          if (pageToken) {
+            const newIds = new Set(merged.map((m) => m.id));
+            return [...prev.filter((p) => !newIds.has(p.id)), ...merged];
+          }
+          return [...localReminders, ...merged];
         });
 
-        if (listRes.status === 401) {
-          localStorage.removeItem('classic_inbox_token');
-          localStorage.removeItem('classic_inbox_token_expiry');
-          setAccessToken(null);
-          setSyncing(false);
-          return;
-        }
-
-        const listData = await listRes.json();
-        setNextPageToken(listData.nextPageToken || null);
-
-        if (listData.messages) {
-          const now = new Date();
-          const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-          const startOfYesterday = startOfToday - 86400000;
-
-          const fetched = [];
-          for (let i = 0; i < listData.messages.length; i += 20) {
-            const chunk = listData.messages.slice(i, i + 20);
-            const chunkResults = await Promise.all(
-              chunk.map(async (m) => {
-                const msgRes = await fetch(
-                  `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`,
-                  { headers: { Authorization: `Bearer ${token}` } }
-                );
-                const msgData = await msgRes.json();
-                const headers = msgData.payload?.headers || [];
-                const from = headers.find((h) => h.name.toLowerCase() === 'from')?.value || 'Gmail Sender';
-                const subject = headers.find((h) => h.name.toLowerCase() === 'subject')?.value || '(No Subject)';
-                const messageIdHeader = headers.find((h) => h.name.toLowerCase() === 'message-id')?.value || null;
-                const internalTs = Number(msgData.internalDate || Date.now());
-                const msgDate = new Date(internalTs);
-
-                let bucket = 'Earlier this month';
-                let timeLabel = msgDate.toLocaleDateString([], { month: 'short', day: 'numeric' });
-                if (internalTs >= startOfToday) {
-                  bucket = 'Today';
-                  timeLabel = msgDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-                } else if (internalTs >= startOfYesterday) {
-                  bucket = 'Yesterday';
-                  timeLabel = 'Yesterday';
-                }
-
-                const { plain, html } = extractGmailBodies(msgData.payload);
-                const emailMatch = from.match(/<([^>]+)>/);
-                const labelIds = msgData.labelIds || [];
-
-                return {
-                  id: `gmail-${m.id}`,
-                  isReminder: false,
-                  gmailId: m.id,
-                  threadId: msgData.threadId || null,
-                  messageIdHeader,
-                  gmailLabels: labelIds,
-                  senderName: emailMatch ? from.replace(/<[^>]+>/, '').replace(/"/g, '').trim() : from,
-                  senderEmail: emailMatch ? emailMatch[1] : from,
-                  subject,
-                  snippet: msgData.snippet || '',
-                  body: plain || msgData.snippet || '(No plain-text body)',
-                  htmlBody: html || null,
-                  note: '',
-                  timeLabel,
-                  bucket,
-                  status: 'inbox',
-                  pinned: false,
-                  snoozedUntil: null,
-                  completedAt: null,
-                  unread: labelIds.includes('UNREAD'),
-                };
-              })
-            );
-            fetched.push(...chunkResults);
-          }
-
-          setEmails((prev) => {
-            const localReminders = prev.filter((item) => item.isReminder);
-            const existingMap = new Map(prev.map((item) => [item.id, item]));
-            const merged = fetched.map((f) => {
-              const old = existingMap.get(f.id);
-              return old
-                ? {
-                    ...f,
-                    pinned: old.pinned,
-                    note: old.note || '',
-                    status: old.status === 'snoozed' ? 'snoozed' : 'inbox',
-                    snoozedUntil: old.snoozedUntil,
-                    manualBundle: old.manualBundle,
-                  }
-                : f;
-            });
-            if (pageToken) {
-              const newIds = new Set(merged.map((m) => m.id));
-              return [...prev.filter((p) => !newIds.has(p.id)), ...merged];
-            }
-            return [...localReminders, ...merged];
-          });
-
-          showToast(`Synced ${fetched.length} inbox emails`);
-        }
-      } catch {
-        showToast('Sync interrupted—try refreshing');
-      } finally {
-        setSyncing(false);
+        showToast(`Synced ${fetched.length} inbox emails`);
       }
-    },
-    []
-  );
+    } catch {
+      showToast('Sync interrupted—try refreshing');
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
 
   const triggerGoogleAuth = useCallback(
-    (clientIdToUse, silent = false) => {
+    (clientIdToUse) => {
       if (!clientIdToUse?.trim()) return;
       const runInit = () => {
-        if (!window.google?.accounts?.oauth2) return;
+        if (!window.google?.accounts?.oauth2) {
+          showToast('Google sign-in script loading—tap again in 1 second');
+          return;
+        }
         const client = window.google.accounts.oauth2.initTokenClient({
           client_id: clientIdToUse.trim(),
-          scope: 'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send',
-          prompt: silent ? '' : 'consent',
+          scope:
+            'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar.readonly',
           callback: (tokenResponse) => {
             if (tokenResponse?.access_token) {
               const expiresInSec = Number(tokenResponse.expires_in || 3500);
               localStorage.setItem('classic_inbox_token', tokenResponse.access_token);
               localStorage.setItem('classic_inbox_token_expiry', String(Date.now() + expiresInSec * 1000));
               setAccessToken(tokenResponse.access_token);
+              setSessionExpired(false);
               setConnectModalOpen(false);
               fetchGmailMessages(tokenResponse.access_token);
+              fetchCalendarEvents(tokenResponse.access_token);
             }
           },
         });
@@ -515,14 +582,15 @@ export default function App() {
         runInit();
       }
     },
-    [fetchGmailMessages]
+    [fetchGmailMessages, fetchCalendarEvents]
   );
 
   useEffect(() => {
     if (accessToken) {
       fetchGmailMessages(accessToken);
+      fetchCalendarEvents(accessToken);
     } else if (googleClientId) {
-      triggerGoogleAuth(googleClientId, true);
+      setSessionExpired(true);
     }
   }, []);
 
@@ -554,7 +622,6 @@ export default function App() {
       return true;
     });
 
-    // Sort "Done" by most recently completed
     if (activeNav === 'done') {
       return [...filtered].sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
     }
@@ -628,34 +695,32 @@ export default function App() {
     setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, note: noteText } : e)));
   };
 
-  const addReminder = () => {
-    if (!reminderText.trim()) return;
-    const newItem = {
-      id: `rem-${Date.now()}`,
-      isReminder: true,
-      gmailId: null,
-      threadId: null,
-      messageIdHeader: null,
-      gmailLabels: [],
-      senderName: 'Reminder',
-      senderEmail: '',
-      subject: reminderText.trim(),
-      snippet: 'Pinned personal reminder',
-      body: reminderText.trim(),
-      htmlBody: null,
-      note: '',
-      timeLabel: 'Today',
-      bucket: 'Today',
-      status: 'inbox',
-      pinned: true,
-      snoozedUntil: null,
-      completedAt: null,
-      unread: false,
-    };
-    setEmails((prev) => [newItem, ...prev]);
-    setReminderText('');
-    setReminderModalOpen(false);
-    showToast('Reminder added to Today');
+  // Right-Panel Task Handlers
+  const addTask = (textToAdd, emailId = null) => {
+    const clean = (textToAdd || newTaskText).trim();
+    if (!clean) return;
+    setTasks((prev) => [{ id: `task-${Date.now()}`, text: clean, done: false, due: 'Today', emailId }, ...prev]);
+    if (!textToAdd) setNewTaskText('');
+    setRightPanelOpen(true);
+    showToast('Added to Tasks');
+  };
+
+  const toggleTask = (id) => {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
+  };
+
+  const deleteTask = (id) => {
+    setTasks((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const openGoogleCalendarCreate = (email = null) => {
+    const base = new URL('https://calendar.google.com/calendar/render');
+    base.searchParams.set('action', 'TEMPLATE');
+    if (email) {
+      base.searchParams.set('text', email.subject);
+      base.searchParams.set('details', `From: ${email.senderName} <${email.senderEmail}>\n\n${email.snippet}`);
+    }
+    window.open(base.toString(), '_blank', 'noopener,noreferrer');
   };
 
   const createCustomBundle = () => {
@@ -723,7 +788,9 @@ export default function App() {
     const emailObj = classifiedEmails.find((item) => item.id === emailId);
     if (!emailObj) return;
 
-    if (targetType === 'bundle') {
+    if (targetType === 'task') {
+      addTask(emailObj.subject, emailObj.id);
+    } else if (targetType === 'bundle') {
       assignSenderRule(emailObj, targetValue);
     } else if (targetType === 'status') {
       if (targetValue === 'done') {
@@ -737,7 +804,6 @@ export default function App() {
     }
   };
 
-  // Touch swipe handlers for iPhone
   const handleTouchStart = (e, id) => {
     const touch = e.touches[0];
     touchStartRef.current = { x: touch.clientX, y: touch.clientY, id };
@@ -893,6 +959,7 @@ export default function App() {
     setEmails(INITIAL_EMAILS);
     setRules(DEFAULT_RULES);
     setBundles(DEFAULT_BUNDLES);
+    setTasks(INITIAL_TASKS);
     showToast('Sample data & rules reset');
   };
 
@@ -914,7 +981,6 @@ export default function App() {
 
     return (
       <div key={email.id} className="relative overflow-hidden border-b border-gray-100 dark:border-gray-800 last:border-b-0">
-        {/* Mobile Swipe Background Reveal */}
         {activeSwipeX !== 0 && (
           <div
             className={`absolute inset-0 flex items-center justify-between px-5 text-white text-xs font-bold ${
@@ -960,9 +1026,9 @@ export default function App() {
 
           <div
             className={`${compactMode ? 'w-7 h-7 text-xs' : 'w-9 h-9 text-sm'} rounded-full flex items-center justify-center text-white font-semibold shrink-0`}
-            style={{ backgroundColor: email.isReminder ? '#F59E0B' : meta.color }}
+            style={{ backgroundColor: meta.color }}
           >
-            {email.isReminder ? <BellRing className="w-4 h-4" /> : (email.senderName || '?')[0].toUpperCase()}
+            {(email.senderName || '?')[0].toUpperCase()}
           </div>
 
           <div className="min-w-0 flex-1">
@@ -985,7 +1051,7 @@ export default function App() {
 
             <div className={`text-sm truncate ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
               <span className={email.unread ? 'font-semibold' : ''}>{email.subject}</span>
-              {!email.isReminder && <span className="text-gray-400"> — {email.snippet}</span>}
+              <span className="text-gray-400"> — {email.snippet}</span>
             </div>
 
             {email.note && (
@@ -997,6 +1063,17 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
+            <button
+              title="Add to Tasks"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                addTask(email.subject, email.id);
+              }}
+              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-blue-500"
+            >
+              <ListTodo className="w-4 h-4" />
+            </button>
+
             <button
               title="Pin to Inbox"
               onClick={(ev) => togglePin(email.id, ev)}
@@ -1059,7 +1136,18 @@ export default function App() {
     );
   };
 
+  const formatEventTime = (ev) => {
+    const startRaw = ev.start?.dateTime || ev.start?.date;
+    if (!startRaw) return '';
+    if (!ev.start?.dateTime) return 'All day';
+    const d = new Date(startRaw);
+    const isToday = d.toDateString() === new Date().toDateString();
+    const timeStr = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return isToday ? timeStr : `${d.toLocaleDateString([], { weekday: 'short' })} ${timeStr}`;
+  };
+
   const buckets = ['Today', 'Yesterday', 'Earlier this month'];
+  const openTasksCount = tasks.filter((t) => !t.done).length;
 
   return (
     <div
@@ -1074,7 +1162,7 @@ export default function App() {
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
       {/* Top App Bar */}
-      <header className={`${headerColor} text-white shadow-md px-3 sm:px-5 h-14 flex items-center justify-between gap-2 shrink-0 transition-colors`}>
+      <header className={`${headerColor} text-white shadow-md px-3 sm:px-5 h-14 flex items-center justify-between gap-2 shrink-0 transition-colors z-30`}>
         <div className="flex items-center gap-2 sm:gap-3">
           <button
             onClick={() => setSidebarOpen((v) => !v)}
@@ -1127,14 +1215,6 @@ export default function App() {
           )}
 
           <button
-            onClick={() => setReminderModalOpen(true)}
-            title="Add Reminder to Today"
-            className="p-2 rounded-full bg-white/15 hover:bg-white/25 text-white transition-colors"
-          >
-            <BellRing className="w-3.5 h-3.5" />
-          </button>
-
-          <button
             onClick={() => setCompactMode((c) => !c)}
             title={compactMode ? 'Comfortable Density' : 'Compact Density'}
             className={`p-2 rounded-full transition-colors hidden sm:flex ${
@@ -1154,9 +1234,12 @@ export default function App() {
 
           {accessToken && (
             <button
-              onClick={() => fetchGmailMessages(accessToken)}
+              onClick={() => {
+                fetchGmailMessages(accessToken);
+                fetchCalendarEvents(accessToken);
+              }}
               disabled={syncing}
-              title="Refresh Inbox"
+              title="Refresh Inbox & Calendar"
               className="p-2 rounded-full bg-white/15 hover:bg-white/25 text-white transition-colors"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
@@ -1164,20 +1247,61 @@ export default function App() {
           )}
 
           <button
-            onClick={() => setConnectModalOpen(true)}
-            className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 px-2.5 py-1.5 rounded-full text-xs font-medium transition-colors"
+            onClick={() => {
+              if (sessionExpired && googleClientId) {
+                triggerGoogleAuth(googleClientId);
+              } else {
+                setConnectModalOpen(true);
+              }
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium transition-colors ${
+              sessionExpired
+                ? 'bg-amber-400 text-gray-900 font-bold hover:bg-amber-300'
+                : 'bg-white/15 hover:bg-white/25 text-white'
+            }`}
           >
             <KeyRound className="w-3.5 h-3.5" />
-            <span className="hidden lg:inline">{accessToken ? 'Connected' : 'Connect'}</span>
+            <span className="hidden lg:inline">
+              {accessToken ? 'Connected' : sessionExpired ? 'Reconnect' : 'Connect'}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setRightPanelOpen((r) => !r)}
+            title={rightPanelOpen ? 'Hide Calendar & Tasks' : 'Show Calendar & Tasks'}
+            className={`p-2 rounded-full transition-colors relative ${
+              rightPanelOpen ? 'bg-white text-blue-600' : 'bg-white/15 hover:bg-white/25 text-white'
+            }`}
+          >
+            {rightPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+            {!rightPanelOpen && openTasksCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-amber-400 text-gray-950 text-[10px] font-bold flex items-center justify-center">
+                {openTasksCount}
+              </span>
+            )}
           </button>
         </div>
       </header>
 
-      {/* Main Layout */}
+      {/* Non-Blocking Reconnect Banner when 1-Hour OAuth Token Expires */}
+      {sessionExpired && !accessToken && googleClientId && (
+        <div className="bg-amber-500 text-gray-950 px-4 py-2 text-xs font-medium flex items-center justify-between gap-2 shrink-0 z-20">
+          <span>Your 1-hour Google session expired. Tap to sync latest Gmail &amp; Calendar.</span>
+          <button
+            onClick={() => triggerGoogleAuth(googleClientId)}
+            className="bg-gray-900 text-white px-3 py-1 rounded-full font-semibold hover:bg-gray-800 shrink-0"
+          >
+            Reconnect Google
+          </button>
+        </div>
+      )}
+
+      {/* Main 3-Column Workspace */}
       <div className="flex-1 flex overflow-hidden relative">
+        {/* Left Navigation Sidebar */}
         {sidebarOpen && (
           <aside
-            className={`w-60 border-r flex flex-col justify-between py-3 shrink-0 z-20 absolute md:static inset-y-0 left-0 shadow-lg md:shadow-none ${
+            className={`w-56 border-r flex flex-col justify-between py-3 shrink-0 z-20 absolute md:static inset-y-0 left-0 shadow-lg md:shadow-none ${
               darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'
             }`}
           >
@@ -1306,57 +1430,71 @@ export default function App() {
           </aside>
         )}
 
-        <main className="flex-1 overflow-y-auto px-2 sm:px-6 py-4">
+        {/* Center Inbox / Reader Column */}
+        <main className={`flex-1 overflow-y-auto ${openEmail ? 'px-0 sm:px-5 pb-4 pt-0' : 'px-2 sm:px-5 py-4'}`}>
           <div className="max-w-4xl mx-auto pb-20">
             {openEmail ? (
-              <div className={`rounded-lg shadow-sm border overflow-hidden ${cardSurface}`}>
+              <div className={`sm:rounded-lg shadow-sm border-x border-b sm:border ${cardSurface}`}>
+                {/* Sticky Action Toolbar — Always Visible While Scrolling */}
                 <div
-                  className={`px-4 py-3 border-b flex flex-wrap items-center justify-between gap-2 ${
-                    darkMode ? 'bg-gray-800/60 border-gray-800' : 'bg-gray-50 border-gray-100'
+                  className={`sticky top-0 z-20 px-3 sm:px-4 py-2.5 border-b flex flex-wrap items-center justify-between gap-2 backdrop-blur-md shadow-sm ${
+                    darkMode ? 'bg-gray-900/95 border-gray-800' : 'bg-white/95 border-gray-200'
                   }`}
                 >
                   <button
                     onClick={() => setOpenEmailId(null)}
-                    className="flex items-center gap-1.5 text-sm font-medium opacity-80 hover:opacity-100"
+                    className="flex items-center gap-1.5 text-sm font-medium opacity-80 hover:opacity-100 px-1.5 py-1 rounded hover:bg-gray-500/10"
                   >
                     <ArrowLeft className="w-4 h-4" />
                     <span>Back</span>
                   </button>
 
-                  <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
-                    {!openEmail.isReminder && (
-                      <>
-                        <select
-                          value={openEmail.bundle}
-                          onChange={(e) => assignSenderRule(openEmail, e.target.value)}
-                          className={`text-xs border rounded px-2 py-1.5 ${
-                            darkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-300 text-gray-700'
-                          }`}
-                        >
-                          {bundles.map((b) => (
-                            <option key={b.id} value={b.id}>
-                              Bundle: {b.label}
-                            </option>
-                          ))}
-                        </select>
+                  <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
+                    <select
+                      value={openEmail.bundle}
+                      onChange={(e) => assignSenderRule(openEmail, e.target.value)}
+                      className={`text-xs border rounded px-2 py-1.5 ${
+                        darkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-300 text-gray-700'
+                      }`}
+                    >
+                      {bundles.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          Bundle: {b.label}
+                        </option>
+                      ))}
+                    </select>
 
-                        <button
-                          onClick={() => openReplyComposer(openEmail)}
-                          className="flex items-center gap-1 px-2.5 py-1.5 rounded hover:bg-gray-500/10 text-xs font-medium"
-                        >
-                          <Reply className="w-4 h-4" />
-                          <span className="hidden sm:inline">Reply</span>
-                        </button>
+                    <button
+                      onClick={() => openReplyComposer(openEmail)}
+                      className="flex items-center gap-1 px-2 py-1.5 rounded hover:bg-gray-500/10 text-xs font-medium"
+                    >
+                      <Reply className="w-4 h-4" />
+                      <span className="hidden sm:inline">Reply</span>
+                    </button>
 
-                        <button
-                          onClick={() => openForwardComposer(openEmail)}
-                          className="flex items-center gap-1 px-2.5 py-1.5 rounded hover:bg-gray-500/10 text-xs font-medium"
-                        >
-                          <Forward className="w-4 h-4" />
-                          <span className="hidden sm:inline">Forward</span>
-                        </button>
-                      </>
-                    )}
+                    <button
+                      onClick={() => openForwardComposer(openEmail)}
+                      className="flex items-center gap-1 px-2 py-1.5 rounded hover:bg-gray-500/10 text-xs font-medium"
+                    >
+                      <Forward className="w-4 h-4" />
+                      <span className="hidden sm:inline">Forward</span>
+                    </button>
+
+                    <button
+                      onClick={() => addTask(openEmail.subject, openEmail.id)}
+                      className="p-2 rounded-full hover:bg-gray-500/10 text-blue-500"
+                      title="Add to Tasks"
+                    >
+                      <ListTodo className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={() => openGoogleCalendarCreate(openEmail)}
+                      className="p-2 rounded-full hover:bg-gray-500/10 text-indigo-500"
+                      title="Schedule in Google Calendar"
+                    >
+                      <CalendarIcon className="w-4 h-4" />
+                    </button>
 
                     <div className="relative">
                       <button
@@ -1414,7 +1552,7 @@ export default function App() {
                 </div>
 
                 {/* Private Sticky Note Bar */}
-                <div className="px-5 py-2.5 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200/60 dark:border-amber-900/40 flex items-center gap-2">
+                <div className="px-4 sm:px-5 py-2.5 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200/60 dark:border-amber-900/40 flex items-center gap-2">
                   <StickyNote className="w-4 h-4 text-amber-600 shrink-0" />
                   <input
                     type="text"
@@ -1425,17 +1563,16 @@ export default function App() {
                   />
                 </div>
 
-                <div className="p-5 sm:p-6">
-                  <h2 className="text-xl font-semibold mb-3">{openEmail.subject}</h2>
-                  {!openEmail.isReminder && (
-                    <div className="flex items-center justify-between text-sm text-gray-500 pb-4 mb-4 border-b border-gray-200 dark:border-gray-800">
-                      <div>
-                        <span className="font-semibold text-gray-800 dark:text-gray-200">{openEmail.senderName}</span>{' '}
-                        <span className="text-xs">&lt;{openEmail.senderEmail}&gt;</span>
-                      </div>
-                      <span className="text-xs">{openEmail.timeLabel}</span>
+                {/* Message Body */}
+                <div className="p-4 sm:p-6">
+                  <h2 className="text-lg sm:text-xl font-semibold mb-3">{openEmail.subject}</h2>
+                  <div className="flex items-center justify-between text-sm text-gray-500 pb-4 mb-4 border-b border-gray-200 dark:border-gray-800 gap-2">
+                    <div className="min-w-0 truncate">
+                      <span className="font-semibold text-gray-800 dark:text-gray-200">{openEmail.senderName}</span>{' '}
+                      <span className="text-xs">&lt;{openEmail.senderEmail}&gt;</span>
                     </div>
-                  )}
+                    <span className="text-xs shrink-0">{openEmail.timeLabel}</span>
+                  </div>
 
                   {openEmail.htmlBody ? (
                     <iframe
@@ -1448,24 +1585,22 @@ export default function App() {
                     <div className="text-sm whitespace-pre-line leading-relaxed">{openEmail.body}</div>
                   )}
 
-                  {!openEmail.isReminder && (
-                    <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-800 flex items-center gap-3">
-                      <button
-                        onClick={() => openReplyComposer(openEmail)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-full border border-gray-300 dark:border-gray-700 hover:bg-gray-500/10 text-sm font-medium"
-                      >
-                        <Reply className="w-4 h-4" />
-                        <span>Reply</span>
-                      </button>
-                      <button
-                        onClick={() => openForwardComposer(openEmail)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-full border border-gray-300 dark:border-gray-700 hover:bg-gray-500/10 text-sm font-medium"
-                      >
-                        <Forward className="w-4 h-4" />
-                        <span>Forward</span>
-                      </button>
-                    </div>
-                  )}
+                  <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-800 flex items-center gap-3">
+                    <button
+                      onClick={() => openReplyComposer(openEmail)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full border border-gray-300 dark:border-gray-700 hover:bg-gray-500/10 text-sm font-medium"
+                    >
+                      <Reply className="w-4 h-4" />
+                      <span>Reply</span>
+                    </button>
+                    <button
+                      onClick={() => openForwardComposer(openEmail)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full border border-gray-300 dark:border-gray-700 hover:bg-gray-500/10 text-sm font-medium"
+                    >
+                      <Forward className="w-4 h-4" />
+                      <span>Forward</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : activeNav === 'inbox' ? (
@@ -1615,6 +1750,210 @@ export default function App() {
             )}
           </div>
         </main>
+
+        {/* Right-Side Panel: Google Calendar + Tasks */}
+        {rightPanelOpen && (
+          <aside
+            className={`w-72 sm:w-80 border-l flex flex-col shrink-0 z-20 absolute lg:static inset-y-0 right-0 shadow-xl lg:shadow-none ${
+              darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'
+            }`}
+          >
+            {/* Right Panel Header & Tabs */}
+            <div className="px-3 py-2.5 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between gap-1">
+              <div className="flex items-center gap-1 text-xs font-semibold">
+                {[
+                  { id: 'all', label: 'Today' },
+                  { id: 'tasks', label: `Tasks (${openTasksCount})` },
+                  { id: 'calendar', label: 'Calendar' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setRightTab(tab.id)}
+                    className={`px-2.5 py-1 rounded-md transition-colors ${
+                      rightTab === tab.id
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-500 hover:bg-gray-500/10'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setRightPanelOpen(false)}
+                className="p-1 rounded hover:bg-gray-500/10 text-gray-400"
+                title="Close Panel"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3 space-y-5">
+              {/* TASKS SECTION (Also acts as a Drop Zone for emails!) */}
+              {(rightTab === 'all' || rightTab === 'tasks') && (
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragOverTarget('right-tasks');
+                  }}
+                  onDragLeave={() => setDragOverTarget(null)}
+                  onDrop={(e) => handleDropOnTarget(e, 'task', null)}
+                  className={`rounded-lg transition-all ${
+                    dragOverTarget === 'right-tasks' ? 'ring-2 ring-blue-500 bg-blue-500/5 p-2' : ''
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-blue-500 flex items-center gap-1.5">
+                      <ListTodo className="w-3.5 h-3.5" />
+                      <span>Tasks</span>
+                    </span>
+                    <span className="text-[11px] text-gray-400">Drag email here</span>
+                  </div>
+
+                  {/* Quick Add Task Input */}
+                  <div className="flex items-center gap-1.5 mb-2.5">
+                    <input
+                      type="text"
+                      value={newTaskText}
+                      onChange={(e) => setNewTaskText(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && addTask()}
+                      placeholder="Add a task..."
+                      className={`flex-1 text-xs border rounded-lg px-2.5 py-2 focus:outline-none ${
+                        darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'
+                      }`}
+                    />
+                    <button
+                      onClick={() => addTask()}
+                      className="p-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white shrink-0"
+                      title="Add Task"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Task Items */}
+                  <div className="space-y-1.5">
+                    {tasks.length === 0 ? (
+                      <div className="text-xs text-gray-400 py-3 text-center">No tasks yet.</div>
+                    ) : (
+                      tasks.map((task) => (
+                        <div
+                          key={task.id}
+                          className={`group flex items-start gap-2 p-2 rounded-lg border text-xs ${
+                            darkMode ? 'border-gray-800 bg-gray-800/40' : 'border-gray-100 bg-gray-50/70'
+                          }`}
+                        >
+                          <button
+                            onClick={() => toggleTask(task.id)}
+                            className={`mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                              task.done
+                                ? 'bg-emerald-500 border-emerald-500 text-white'
+                                : 'border-gray-400 hover:border-blue-500'
+                            }`}
+                          >
+                            {task.done && <Check className="w-2.5 h-2.5" />}
+                          </button>
+
+                          <div
+                            onClick={() => task.emailId && setOpenEmailId(task.emailId)}
+                            className={`flex-1 min-w-0 ${task.emailId ? 'cursor-pointer hover:underline' : ''}`}
+                          >
+                            <div className={task.done ? 'line-through text-gray-400' : ''}>{task.text}</div>
+                            {task.emailId && (
+                              <span className="text-[10px] text-blue-500 inline-flex items-center gap-0.5 mt-0.5">
+                                <Mail className="w-2.5 h-2.5" /> Linked email
+                              </span>
+                            )}
+                          </div>
+
+                          <button
+                            onClick={() => deleteTask(task.id)}
+                            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 p-0.5"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* GOOGLE CALENDAR SECTION */}
+              {(rightTab === 'all' || rightTab === 'calendar') && (
+                <div className={rightTab === 'all' ? 'pt-3 border-t border-gray-200 dark:border-gray-800' : ''}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-indigo-500 flex items-center gap-1.5">
+                      <CalendarIcon className="w-3.5 h-3.5" />
+                      <span>Google Calendar</span>
+                    </span>
+                    <button
+                      onClick={() => openGoogleCalendarCreate(openEmail)}
+                      className="text-[11px] text-indigo-500 hover:underline flex items-center gap-1 font-medium"
+                    >
+                      <Plus className="w-3 h-3" /> New Event
+                    </button>
+                  </div>
+
+                  {!accessToken ? (
+                    <div className="p-3 rounded-lg border border-dashed border-gray-300 dark:border-gray-700 text-center space-y-2">
+                      <p className="text-xs text-gray-400">Connect Google to view upcoming events here.</p>
+                      <button
+                        onClick={() =>
+                          googleClientId ? triggerGoogleAuth(googleClientId) : setConnectModalOpen(true)
+                        }
+                        className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-full font-medium hover:bg-indigo-700"
+                      >
+                        Sync Google Calendar
+                      </button>
+                    </div>
+                  ) : calendarError ? (
+                    <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs space-y-2">
+                      <p className="text-amber-600 dark:text-amber-300">
+                        Calendar permission needed. Re-authorize once to load your schedule.
+                      </p>
+                      <button
+                        onClick={() => triggerGoogleAuth(googleClientId)}
+                        className="text-xs bg-amber-500 text-gray-950 px-3 py-1 rounded-full font-semibold"
+                      >
+                        Grant Calendar Access
+                      </button>
+                    </div>
+                  ) : calendarEvents.length === 0 ? (
+                    <div className="text-xs text-gray-400 py-3 text-center">No upcoming events in the next 7 days.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {calendarEvents.map((ev) => (
+                        <a
+                          key={ev.id}
+                          href={ev.htmlLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={`block p-2.5 rounded-lg border-l-4 border-l-indigo-500 border transition-colors ${
+                            darkMode
+                              ? 'bg-gray-800/50 border-gray-800 hover:bg-gray-800'
+                              : 'bg-indigo-50/40 border-gray-100 hover:bg-indigo-50'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-1">
+                            <div className="text-xs font-semibold truncate">{ev.summary || '(Busy)'}</div>
+                            <ExternalLink className="w-3 h-3 text-gray-400 shrink-0 mt-0.5" />
+                          </div>
+                          <div className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium mt-0.5">
+                            {formatEventTime(ev)}
+                          </div>
+                          {ev.location && (
+                            <div className="text-[10px] text-gray-400 truncate mt-0.5">{ev.location}</div>
+                          )}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </aside>
+        )}
       </div>
 
       {/* Floating Compose Button */}
@@ -1623,50 +1962,12 @@ export default function App() {
           setComposeForm({ mode: 'new', to: '', subject: '', body: '', threadId: null, inReplyTo: null });
           setComposeOpen(true);
         }}
-        className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-[#DB4437] hover:bg-[#c53929] text-white shadow-lg flex items-center justify-center transition-transform hover:scale-105 z-30"
+        className={`fixed bottom-6 ${rightPanelOpen ? 'right-6 lg:right-[21.5rem]' : 'right-6'} w-14 h-14 rounded-full bg-[#DB4437] hover:bg-[#c53929] text-white shadow-lg flex items-center justify-center transition-all hover:scale-105 z-30`}
         style={{ marginBottom: 'env(safe-area-inset-bottom)' }}
         title="Compose"
       >
         <Plus className="w-6 h-6" />
       </button>
-
-      {/* Add Reminder Modal */}
-      {reminderModalOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
-          <div className={`rounded-xl max-w-md w-full shadow-2xl overflow-hidden ${cardSurface}`}>
-            <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
-              <h3 className="font-semibold flex items-center gap-2">
-                <BellRing className="w-4 h-4 text-amber-500" />
-                <span>Add Inbox Reminder</span>
-              </h3>
-              <button onClick={() => setReminderModalOpen(false)}>
-                <X className="w-5 h-5 text-gray-400" />
-              </button>
-            </div>
-            <div className="p-5 space-y-3">
-              <input
-                type="text"
-                autoFocus
-                value={reminderText}
-                onChange={(e) => setReminderText(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addReminder()}
-                placeholder="e.g., Follow up on truck quote before 3 PM"
-                className={`w-full text-sm border rounded-lg px-3 py-2.5 focus:outline-none ${
-                  darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-300'
-                }`}
-              />
-              <div className="flex justify-end">
-                <button
-                  onClick={addReminder}
-                  className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold px-4 py-2 rounded-lg"
-                >
-                  Pin to Today
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Custom Bundles & Routing Rules Modal */}
       {ruleModalOpen && (
@@ -1679,7 +1980,6 @@ export default function App() {
               </button>
             </div>
             <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto">
-              {/* Create Custom Bundle */}
               <div className="space-y-2">
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
                   1. Create Custom Bundle
@@ -1728,7 +2028,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* Add Deterministic Rule */}
               <div className="space-y-2 border-t border-gray-200 dark:border-gray-800 pt-4">
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
                   2. Deterministic Routing Rules (First Match Wins)
@@ -1791,7 +2090,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Active Rule List */}
               <div className="space-y-2">
                 {rules.map((r, idx) => (
                   <div
@@ -1819,12 +2117,12 @@ export default function App() {
         </div>
       )}
 
-      {/* Connect Gmail / Import .EML Modal */}
+      {/* Connect Gmail & Calendar Modal */}
       {connectModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
           <div className={`rounded-xl max-w-md w-full shadow-2xl overflow-hidden ${cardSurface}`}>
             <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
-              <h3 className="font-semibold">Import .EML or Connect Live Gmail</h3>
+              <h3 className="font-semibold">Import .EML or Connect Google</h3>
               <button onClick={() => setConnectModalOpen(false)}>
                 <X className="w-5 h-5 text-gray-400" />
               </button>
@@ -1849,7 +2147,7 @@ export default function App() {
 
               <div className="border-t border-gray-200 dark:border-gray-800 pt-4">
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
-                  Option 2: Live Gmail API (Auto Sign-In Enabled)
+                  Option 2: Live Gmail + Google Calendar
                 </h4>
                 <input
                   type="text"
@@ -1867,11 +2165,11 @@ export default function App() {
                       return;
                     }
                     localStorage.setItem('classic_inbox_client_id', googleClientId.trim());
-                    triggerGoogleAuth(googleClientId.trim(), false);
+                    triggerGoogleAuth(googleClientId.trim());
                   }}
                   className="w-full bg-[#4285F4] hover:bg-blue-600 text-white text-xs font-semibold py-2.5 rounded-lg transition-colors"
                 >
-                  Sign in with Google &amp; Sync All Inbox
+                  Sign in with Google &amp; Sync All
                 </button>
               </div>
             </div>
