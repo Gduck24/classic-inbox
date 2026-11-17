@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Plus,
   Trash2,
+  KeyRound,
   X,
   Mail,
   Sparkles,
@@ -29,7 +30,6 @@ import {
   CheckSquare,
   Lightbulb,
   User,
-  Database,
   Tag,
 } from 'lucide-react';
 
@@ -60,59 +60,34 @@ const DEFAULT_RULES = [
   { id: 'r3', name: 'Receipts & Orders -> Purchases', field: 'any', pattern: 'receipt|order confirmation|rma|shipped', bundle: 'Purchases' },
 ];
 
-const SAMPLE_EMAILS = [
-  {
-    id: 'sample-1',
-    senderName: 'Five Iron Golf',
-    senderEmail: 'league@fiveirongolf.com',
-    subject: 'Re: ⛳ Winter League ’26 Welcome Email!',
-    snippet: 'Hey Grayson! We are looping our team at DFW to help you getting matched up...',
-    body: 'Hey Grayson!\n\nWe are looping our team at DFW to help you getting matched up for the upcoming indoor TrackMan simulator league.\n\nMake sure your handicap is dialed in and your radar-compatible balls are ready to go.\n\nBest,\nFive Iron Golf Team',
-    timeLabel: '12:28 PM',
-    bucket: 'Today',
-    status: 'inbox',
-    pinned: true,
-    unread: true,
-  },
-  {
-    id: 'sample-2',
-    senderName: 'CARS_socialmedia',
-    senderEmail: 'updates@gm-trucks.com',
-    subject: 'Re: [EXTERNAL] Help for long time Chevy Family - Gduck24 on GM-Trucks.com',
-    snippet: 'Hello Grayson, To clarify, are you still looking for wiring diagrams...',
-    body: 'Hello Grayson,\n\nTo clarify, are you still looking for wiring diagrams for your Z71 steering column harness replacement?\n\nLet us know if the pinouts match your previous generation notes.\n\nThanks,\nGM-Trucks Forum Team',
-    timeLabel: '9:27 AM',
-    bucket: 'Today',
-    status: 'inbox',
-    pinned: false,
-    unread: true,
-  },
-  {
-    id: 'sample-3',
-    senderName: 'Kickstarter Updates',
-    senderEmail: 'no-reply@kickstarter.com',
-    subject: 'Project Update #12: CNC Laser Enclosure Shipping Status',
-    snippet: 'Your reward package has cleared initial quality inspection...',
-    body: 'Hello Backer,\n\nYour reward package for the advanced enclosure kit has cleared initial quality inspection and is queued for freight carrier pickup.\n\nTrack your shipment details inside your dashboard.',
-    timeLabel: 'Yesterday',
-    bucket: 'Yesterday',
-    status: 'inbox',
-    pinned: false,
-    unread: false,
-  },
-];
+function decodeBase64Url(data) {
+  if (!data) return '';
+  try {
+    const base64 = data.replace(/-/g, '+').replace(/_/g, '/');
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new TextDecoder('utf-8').decode(bytes);
+  } catch {
+    return '';
+  }
+}
 
-const SAMPLE_TASKS = [
-  { id: 't1', text: 'Brad has heat gun', details: '', done: false },
-  { id: 't2', text: 'Aniston has', details: 'crowbar, sander, chisel, extension cord, caulk gun', done: false },
-  { id: 't3', text: 'RV strip', details: '', done: false },
-  { id: 't4', text: 'JJ has spring compressor', details: '', done: false },
-];
-
-const SAMPLE_CALENDAR = [
-  { id: 'c1', summary: 'Commercial Construction Site Walk', start: { dateTime: '2026-11-18T09:00:00-06:00' } },
-  { id: 'c2', summary: 'Indoor Simulator League Match @ Five Iron', start: { dateTime: '2026-11-18T18:30:00-06:00' } },
-];
+function extractGmailBodies(payload) {
+  let plain = '';
+  let html = '';
+  const walk = (part) => {
+    if (!part) return;
+    if (part.mimeType === 'text/plain' && part.body?.data && !plain) {
+      plain = decodeBase64Url(part.body.data);
+    } else if (part.mimeType === 'text/html' && part.body?.data && !html) {
+      html = decodeBase64Url(part.body.data);
+    }
+    if (Array.isArray(part.parts)) part.parts.forEach(walk);
+  };
+  walk(payload);
+  return { plain, html };
+}
 
 function classifyEmail(email, rules, bundleMap) {
   if (email.isReminder) return 'Primary';
@@ -132,17 +107,40 @@ function classifyEmail(email, rules, bundleMap) {
 }
 
 export default function App() {
-  const [bundles, setBundles] = useState(DEFAULT_BUNDLES);
-  const [emails, setEmails] = useState(SAMPLE_EMAILS);
-  const [rules, setRules] = useState(DEFAULT_RULES);
-  const [tasks, setTasks] = useState(SAMPLE_TASKS);
-  const [calendarEvents, setCalendarEvents] = useState(SAMPLE_CALENDAR);
+  const [bundles, setBundles] = useState(() => {
+    try {
+      const saved = localStorage.getItem('classic_inbox_bundles_v4');
+      return saved ? JSON.parse(saved) : DEFAULT_BUNDLES;
+    } catch {
+      return DEFAULT_BUNDLES;
+    }
+  });
 
-  const [darkMode, setDarkMode] = useState(false);
+  const [emails, setEmails] = useState(() => {
+    try {
+      const saved = localStorage.getItem('classic_inbox_emails_v4');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [rules, setRules] = useState(() => {
+    try {
+      const saved = localStorage.getItem('classic_inbox_rules_v4');
+      return saved ? JSON.parse(saved) : DEFAULT_RULES;
+    } catch {
+      return DEFAULT_RULES;
+    }
+  });
+
+  const [tasks, setTasks] = useState([]);
+  const [calendarEvents, setCalendarEvents] = useState([]);
+  const [calendarError, setCalendarError] = useState(false);
+
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('classic_inbox_dark') === 'true');
   const [activeNav, setActiveNav] = useState('inbox');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  
-  // Gmail right panel state: 'tasks' | 'calendar' | 'keep' | 'contacts' | null
   const [activeRightPanel, setActiveRightPanel] = useState('tasks');
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -150,7 +148,20 @@ export default function App() {
   const [openEmailId, setOpenEmailId] = useState(null);
   const [newTaskText, setNewTaskText] = useState('');
   const [toast, setToast] = useState(null);
-  const [isSampleMode, setIsSampleMode] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [nextPageToken, setNextPageToken] = useState(null);
+
+  const [googleClientId, setGoogleClientId] = useState(() => localStorage.getItem('classic_inbox_client_id') || '');
+  const [accessToken, setAccessToken] = useState(() => {
+    const savedToken = localStorage.getItem('classic_inbox_token');
+    const expiry = Number(localStorage.getItem('classic_inbox_token_expiry') || 0);
+    return savedToken && Date.now() < expiry - 60000 ? savedToken : null;
+  });
+
+  useEffect(() => { localStorage.setItem('classic_inbox_bundles_v4', JSON.stringify(bundles)); }, [bundles]);
+  useEffect(() => { localStorage.setItem('classic_inbox_emails_v4', JSON.stringify(emails)); }, [emails]);
+  useEffect(() => { localStorage.setItem('classic_inbox_rules_v4', JSON.stringify(rules)); }, [rules]);
+  useEffect(() => { localStorage.setItem('classic_inbox_dark', String(darkMode)); }, [darkMode]);
 
   const bundleMap = useMemo(() => {
     const map = {};
@@ -163,28 +174,236 @@ export default function App() {
     setTimeout(() => setToast(null), 3200);
   };
 
-  const toggleSampleMode = () => {
-    if (!isSampleMode) {
-      setEmails(SAMPLE_EMAILS);
-      setTasks(SAMPLE_TASKS);
-      setCalendarEvents(SAMPLE_CALENDAR);
-      setIsSampleMode(true);
-      showToast('Loaded sample sandbox workspace');
-    } else {
-      setEmails([]);
-      setTasks([]);
-      setCalendarEvents([]);
-      setIsSampleMode(false);
-      showToast('Cleared sandbox workspace');
+  const fetchCalendarEvents = useCallback(async (token) => {
+    if (!token) return;
+    try {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfRange = new Date(startOfDay.getTime() + 14 * 86400000);
+      const url = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
+      url.searchParams.set('timeMin', startOfDay.toISOString());
+      url.searchParams.set('timeMax', endOfRange.toISOString());
+      url.searchParams.set('singleEvents', 'true');
+      url.searchParams.set('orderBy', 'startTime');
+
+      const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) { setCalendarError(true); return; }
+      setCalendarError(false);
+      const data = await res.json();
+      setCalendarEvents(data.items || []);
+    } catch {
+      setCalendarError(true);
+    }
+  }, []);
+
+  const fetchGoogleTasks = useCallback(async (token) => {
+    if (!token) return;
+    try {
+      const res = await fetch('https://tasks.googleapis.com/tasks/v1/lists/@default/tasks?showCompleted=false', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.items) {
+          setTasks(data.items.map((t) => ({ id: t.id, text: t.title, details: t.notes || '', done: t.status === 'completed', googleTaskId: t.id })));
+        }
+      }
+    } catch {}
+  }, []);
+
+  const addGoogleTask = async (text) => {
+    if (!text.trim()) return;
+    const tempId = `task-${Date.now()}`;
+    const newTask = { id: tempId, text: text.trim(), details: '', done: false };
+    setTasks((prev) => [newTask, ...prev]);
+
+    if (accessToken) {
+      try {
+        const res = await fetch('https://tasks.googleapis.com/tasks/v1/lists/@default/tasks', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: text.trim() }),
+        });
+        const data = await res.json();
+        if (data.id) {
+          setTasks((prev) => prev.map((t) => (t.id === tempId ? { ...t, id: data.id, googleTaskId: data.id } : t)));
+        }
+      } catch {}
     }
   };
 
-  const classifiedEmails = useMemo => {
-    return emails.map((e) => ({ ...e, bundle: classifyEmail(e, rules, bundleMap) }));
+  const toggleGoogleTask = async (task) => {
+    const nextDone = !task.done;
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: nextDone } : t)));
+    if (accessToken && task.googleTaskId) {
+      try {
+        await fetch(`https://tasks.googleapis.com/tasks/v1/lists/@default/tasks/${task.googleTaskId}`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: nextDone ? 'completed' : 'needsAction' }),
+        });
+      } catch {}
+    }
   };
 
+  const deleteGoogleTask = async (task) => {
+    setTasks((prev) => prev.filter((t) => t.id !== task.id));
+    if (accessToken && task.googleTaskId) {
+      try {
+        await fetch(`https://tasks.googleapis.com/tasks/v1/lists/@default/tasks/${task.googleTaskId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+      } catch {}
+    }
+  };
+
+  const fetchGmailMessages = useCallback(async (token, pageToken = null) => {
+    if (!token) return;
+    setSyncing(true);
+    try {
+      const url = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages');
+      url.searchParams.set('maxResults', '50');
+      url.searchParams.set('q', 'in:inbox');
+      if (pageToken) url.searchParams.set('pageToken', pageToken);
+
+      const listRes = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+      if (listRes.status === 401) {
+        localStorage.removeItem('classic_inbox_token');
+        setAccessToken(null);
+        setSyncing(false);
+        return;
+      }
+      const listData = await listRes.json();
+      setNextPageToken(listData.nextPageToken || null);
+
+      if (listData.messages) {
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        const startOfYesterday = startOfToday - 86400000;
+
+        const fetched = [];
+        for (let i = 0; i < listData.messages.length; i += 15) {
+          const chunk = listData.messages.slice(i, i + 15);
+          const chunkResults = await Promise.all(
+            chunk.map(async (m) => {
+              const msgRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              const msgData = await msgRes.json();
+              const headers = msgData.payload?.headers || [];
+              const from = headers.find((h) => h.name.toLowerCase() === 'from')?.value || 'Gmail Sender';
+              const subject = headers.find((h) => h.name.toLowerCase() === 'subject')?.value || '(No Subject)';
+              const internalTs = Number(msgData.internalDate || Date.now());
+              const msgDate = new Date(internalTs);
+
+              let bucket = 'Earlier this month';
+              let timeLabel = msgDate.toLocaleDateString([], { month: 'short', day: 'numeric' });
+              if (internalTs >= startOfToday) {
+                bucket = 'Today';
+                timeLabel = msgDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+              } else if (internalTs >= startOfYesterday) {
+                bucket = 'Yesterday';
+                timeLabel = 'Yesterday';
+              }
+
+              const { plain, html } = extractGmailBodies(msgData.payload);
+              const emailMatch = from.match(/<([^>]+)>/);
+              const labelIds = msgData.labelIds || [];
+
+              return {
+                id: `gmail-${m.id}`,
+                isReminder: false,
+                gmailId: m.id,
+                threadId: msgData.threadId || null,
+                gmailLabels: labelIds,
+                senderName: emailMatch ? from.replace(/<[^>]+>/, '').replace(/"/g, '').trim() : from,
+                senderEmail: emailMatch ? emailMatch[1] : from,
+                subject,
+                snippet: msgData.snippet || '',
+                body: plain || msgData.snippet || '',
+                htmlBody: html || null,
+                timeLabel,
+                bucket,
+                status: 'inbox',
+                pinned: false,
+                unread: labelIds.includes('UNREAD'),
+              };
+            })
+          );
+          fetched.push(...chunkResults);
+        }
+
+        setEmails((prev) => {
+          const existingMap = new Map(prev.map((item) => [item.id, item]));
+          return fetched.map((f) => {
+            const old = existingMap.get(f.id);
+            return old ? { ...f, pinned: old.pinned, status: old.status, manualBundle: old.manualBundle } : f;
+          });
+        });
+        showToast(`Synced ${fetched.length} emails`);
+      }
+    } catch {
+      showToast('Sync interrupted');
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
+
+  const triggerGoogleAuth = useCallback(() => {
+    const clientIdToUse = googleClientId || localStorage.getItem('classic_inbox_client_id');
+    if (!clientIdToUse?.trim()) {
+      showToast('Please set your Google Client ID first');
+      return;
+    }
+    const runInit = () => {
+      if (!window.google?.accounts?.oauth2) return;
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: clientIdToUse.trim(),
+        scope: 'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/tasks',
+        callback: (tokenResponse) => {
+          if (tokenResponse?.access_token) {
+            const expiresInSec = Number(tokenResponse.expires_in || 3500);
+            localStorage.setItem('classic_inbox_token', tokenResponse.access_token);
+            localStorage.setItem('classic_inbox_token_expiry', String(Date.now() + expiresInSec * 1000));
+            setAccessToken(tokenResponse.access_token);
+            fetchGmailMessages(tokenResponse.access_token);
+            fetchCalendarEvents(tokenResponse.access_token);
+            fetchGoogleTasks(tokenResponse.access_token);
+            showToast('Connected to Google successfully!');
+          }
+        },
+      });
+      client.requestAccessToken();
+    };
+
+    const scriptId = 'google-gis-script';
+    if (!document.getElementById(scriptId)) {
+      const s = document.createElement('script');
+      s.id = scriptId;
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.async = true;
+      s.onload = runInit;
+      document.body.appendChild(s);
+    } else {
+      runInit();
+    }
+  }, [googleClientId, fetchGmailMessages, fetchCalendarEvents, fetchGoogleTasks]);
+
+  useEffect(() => {
+    if (accessToken) {
+      fetchGmailMessages(accessToken);
+      fetchCalendarEvents(accessToken);
+      fetchGoogleTasks(accessToken);
+    }
+  }, [accessToken, fetchGmailMessages, fetchCalendarEvents, fetchGoogleTasks]);
+
+  const classifiedEmails = useMemo(() => {
+    return emails.map((e) => ({ ...e, bundle: classifyEmail(e, rules, bundleMap) }));
+  }, [emails, rules, bundleMap]);
+
   const visibleEmails = useMemo(() => {
-    return classifiedEmails().filter((e) => {
+    return classifiedEmails.filter((e) => {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const hay = `${e.senderName} ${e.senderEmail} ${e.subject} ${e.snippet}`.toLowerCase();
@@ -220,19 +439,6 @@ export default function App() {
     showToast(`Swept unpinned items in ${bucket}`);
   };
 
-  const addSandboxTask = (text) => {
-    if (!text.trim()) return;
-    setTasks((prev) => [{ id: `task-${Date.now()}`, text: text.trim(), details: '', done: false }, ...prev]);
-  };
-
-  const toggleTask = (task) => {
-    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: !t.done } : t)));
-  };
-
-  const deleteTask = (task) => {
-    setTasks((prev) => prev.filter((t) => t.id !== task.id));
-  };
-
   const cardSurface = darkMode ? 'bg-gray-900 border-gray-800 text-gray-100' : 'bg-white border-gray-200 text-gray-900';
   const rowHover = darkMode ? 'hover:bg-gray-800/80 border-gray-800' : 'hover:bg-gray-50 border-gray-100';
 
@@ -266,7 +472,7 @@ export default function App() {
   };
 
   const buckets = ['Today', 'Yesterday', 'Earlier this month'];
-  const openEmail = classifiedEmails().find((e) => e.id === openEmailId);
+  const openEmail = classifiedEmails.find((e) => e.id === openEmailId);
 
   return (
     <div className={`h-full flex flex-col overflow-hidden ${darkMode ? 'bg-gray-950 text-gray-100' : 'bg-[#f2f2f2] text-gray-900'}`}>
@@ -290,9 +496,9 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button onClick={toggleSampleMode} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${isSampleMode ? 'bg-emerald-600 text-white shadow' : 'bg-white/15 hover:bg-white/25'}`}>
-            <Database className="w-3.5 h-3.5" />
-            <span>{isSampleMode ? 'Sandbox Active' : 'Load Sandbox'}</span>
+          <button onClick={triggerGoogleAuth} className="flex items-center gap-1 bg-white/15 px-3 py-1.5 rounded-full text-xs font-medium hover:bg-white/25">
+            <KeyRound className="w-3.5 h-3.5" />
+            <span>{accessToken ? 'Connected' : 'Connect Google'}</span>
           </button>
           <button onClick={() => setDarkMode((d) => !d)} className="p-2 rounded-full bg-white/15 hover:bg-white/25">
             {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -422,7 +628,6 @@ export default function App() {
             <aside className={`w-80 border-l flex flex-col ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
               {activeRightPanel === 'tasks' ? (
                 <>
-                  {/* Tasks Flyout Header matching Gmail */}
                   <div className="px-4 pt-4 pb-2 flex items-center justify-between border-b border-gray-100 dark:border-gray-800">
                     <div className="flex flex-col">
                       <span className="text-[10px] font-bold tracking-widest text-gray-400 uppercase">TASKS</span>
@@ -437,47 +642,48 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Tasks Body Content */}
                   <div className="p-4 flex-1 overflow-y-auto space-y-4">
-                    {/* Pill-shaped Add Task Input Bar matching Gmail */}
                     <div className="relative flex items-center border-2 border-blue-600 rounded-full px-4 py-2.5 shadow-sm">
                       <CheckSquare className="w-5 h-5 text-blue-600 mr-3 shrink-0" />
                       <input
                         type="text"
                         value={newTaskText}
                         onChange={(e) => setNewTaskText(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && (addSandboxTask(newTaskText), setNewTaskText(''))}
+                        onKeyDown={(e) => e.key === 'Enter' && (addGoogleTask(newTaskText), setNewTaskText(''))}
                         placeholder="Add a task"
                         className="w-full text-sm bg-transparent placeholder-blue-600/70 text-blue-900 dark:text-blue-200 focus:outline-none"
                       />
-                      <button className="absolute right-3 text-gray-400 hover:text-gray-600"><MoreVertical className="w-4 h-4" /></button>
+                      <button onClick={() => (addGoogleTask(newTaskText), setNewTaskText(''))} className="text-xs bg-blue-600 text-white px-2.5 py-1 rounded-full font-medium">Add</button>
                     </div>
 
-                    {/* Task Item List */}
                     <div className="space-y-3 pt-2">
-                      {tasks.map((t) => (
-                        <div key={t.id} className="flex items-start gap-3 group">
-                          <input
-                            type="checkbox"
-                            checked={t.done}
-                            onChange={() => toggleTask(t)}
-                            className="w-5 h-5 rounded-full border-2 border-gray-400 text-blue-600 focus:ring-0 mt-0.5 cursor-pointer shrink-0"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className={`text-sm ${t.done ? 'line-through text-gray-400' : 'text-gray-800 dark:text-gray-200'}`}>
-                              {t.text}
-                            </div>
-                            {t.details && (
-                              <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">
-                                {t.details}
+                      {tasks.length === 0 ? (
+                        <div className="text-xs text-gray-400 text-center py-6">{accessToken ? 'No tasks found.' : 'Connect Google to sync tasks.'}</div>
+                      ) : (
+                        tasks.map((t) => (
+                          <div key={t.id} className="flex items-start gap-3 group">
+                            <input
+                              type="checkbox"
+                              checked={t.done}
+                              onChange={() => toggleGoogleTask(t)}
+                              className="w-5 h-5 rounded-full border-2 border-gray-400 text-blue-600 focus:ring-0 mt-0.5 cursor-pointer shrink-0"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className={`text-sm ${t.done ? 'line-through text-gray-400' : 'text-gray-800 dark:text-gray-200'}`}>
+                                {t.text}
                               </div>
-                            )}
+                              {t.details && (
+                                <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">
+                                  {t.details}
+                                </div>
+                              )}
+                            </div>
+                            <button onClick={() => deleteGoogleTask(t)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 p-1">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
-                          <button onClick={() => deleteTask(t)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 p-1">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
+                        ))
+                      )}
                     </div>
                   </div>
                 </>
@@ -488,12 +694,22 @@ export default function App() {
                     <button onClick={() => setActiveRightPanel(null)}><X className="w-4 h-4 text-gray-400" /></button>
                   </div>
                   <div className="p-3 space-y-2 flex-1 overflow-y-auto">
-                    {calendarEvents.map((ev) => (
-                      <div key={ev.id} className="p-2.5 rounded bg-blue-500/5 border-l-4 border-blue-500 text-xs">
-                        <div className="font-semibold">{ev.summary}</div>
-                        <div className="text-[10px] text-gray-400 mt-0.5">{new Date(ev.start.dateTime).toLocaleString()}</div>
-                      </div>
-                    ))}
+                    {!accessToken ? (
+                      <div className="text-xs text-gray-400 text-center py-6">Connect Google to sync calendar.</div>
+                    ) : calendarError ? (
+                      <div className="text-xs text-amber-500 text-center py-6">Calendar access required. Reconnect Google.</div>
+                    ) : calendarEvents.length === 0 ? (
+                      <div className="text-xs text-gray-400 text-center py-6">No upcoming events.</div>
+                    ) : (
+                      calendarEvents.map((ev) => (
+                        <div key={ev.id} className="p-2.5 rounded bg-blue-500/5 border-l-4 border-blue-500 text-xs">
+                          <div className="font-semibold">{ev.summary}</div>
+                          <div className="text-[10px] text-gray-400 mt-0.5">
+                            {ev.start?.dateTime ? new Date(ev.start.dateTime).toLocaleString() : 'All day'}
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </>
               ) : (
@@ -505,7 +721,6 @@ export default function App() {
             </aside>
           )}
 
-          {/* Slim Icon Strip matching Google Workspace sidebar */}
           <div className={`w-14 border-l flex flex-col items-center py-4 gap-6 shrink-0 ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-gray-50/80 border-gray-200'}`}>
             <button
               onClick={() => setActiveRightPanel(activeRightPanel === 'calendar' ? null : 'calendar')}
