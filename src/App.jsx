@@ -40,87 +40,35 @@ import {
   ExternalLink,
   PanelRightClose,
   PanelRightOpen,
+  ArrowUp,
+  ArrowDown,
+  Tag,
 } from 'lucide-react';
 
-const ICON_MAP = {
-  Mail,
-  Bell,
-  Landmark,
-  ShoppingBag,
-  Sparkles,
-  Users,
-  Plane,
-  BellRing,
-};
+const ICON_OPTIONS = [
+  { name: 'Mail', icon: Mail },
+  { name: 'Bell', icon: Bell },
+  { name: 'Landmark', icon: Landmark },
+  { name: 'ShoppingBag', icon: ShoppingBag },
+  { name: 'Sparkles', icon: Sparkles },
+  { name: 'Users', icon: Users },
+  { name: 'Plane', icon: Plane },
+  { name: 'Tag', icon: Tag },
+];
 
 const DEFAULT_BUNDLES = [
   { id: 'Primary', label: 'Primary', color: '#4285F4', iconName: 'Mail', inlineBundle: false, custom: false },
   { id: 'Updates', label: 'Updates', color: '#FBBC05', iconName: 'Bell', inlineBundle: true, custom: false },
-  { id: 'Finance', label: 'Finance', color: '#0F9D58', iconName: 'Landmark', inlineBundle: true, custom: false },
+  { id: 'Finance', label: 'Finance & Bills', color: '#0F9D58', iconName: 'Landmark', inlineBundle: true, custom: false },
   { id: 'Purchases', label: 'Purchases', color: '#8E24AA', iconName: 'ShoppingBag', inlineBundle: true, custom: false },
   { id: 'Promos', label: 'Promos', color: '#00ACC1', iconName: 'Sparkles', inlineBundle: true, custom: false },
   { id: 'Social', label: 'Social', color: '#DB4437', iconName: 'Users', inlineBundle: true, custom: false },
-  { id: 'Travel', label: 'Travel', color: '#3F51B5', iconName: 'Plane', inlineBundle: true, custom: false },
 ];
 
 const DEFAULT_RULES = [
   { id: 'r1', name: 'Kickstarter -> Updates', field: 'sender', pattern: 'kickstarter', bundle: 'Updates' },
-  { id: 'r2', name: 'ATF eForms -> Updates', field: 'sender', pattern: 'eforms.notifications', bundle: 'Updates' },
-  { id: 'r3', name: 'Invoices & Statements -> Finance', field: 'any', pattern: 'invoice|balance due|statement|payment request', bundle: 'Finance' },
-  { id: 'r4', name: 'Receipts & Orders -> Purchases', field: 'any', pattern: 'receipt|order confirmation|rma|shipped', bundle: 'Purchases' },
-  { id: 'r5', name: 'Deals & Promos -> Promos', field: 'any', pattern: '% off|black friday|sale|unsubscribe|offers|savings', bundle: 'Promos' },
-];
-
-const INITIAL_EMAILS = [
-  {
-    id: 'e1',
-    isReminder: false,
-    gmailId: null,
-    threadId: null,
-    messageIdHeader: null,
-    gmailLabels: [],
-    senderName: 'CARS_social, me',
-    senderEmail: 'socialmedia@gm.com',
-    subject: 'Help for long time Chevy Family - Gduck24 on GM-Trucks.com',
-    snippet: 'I will be using the dealer for all of it. On Tue, Nov 17, 2026 at 9:27 AM CARS_socialmedia wrote...',
-    body: 'Hi Grayson,\n\nI will be using the dealer for all of it. Thanks for reaching out regarding your 2020 Z71 and your long history with Chevy trucks.\n\nBest,\nCARS Social Media Team',
-    htmlBody: null,
-    note: 'Confirm dealer warranty coverage before Friday',
-    timeLabel: '10:04 AM',
-    bucket: 'Today',
-    status: 'inbox',
-    pinned: true,
-    snoozedUntil: null,
-    completedAt: null,
-    unread: true,
-  },
-  {
-    id: 'e2',
-    isReminder: false,
-    gmailId: null,
-    threadId: null,
-    messageIdHeader: null,
-    gmailLabels: [],
-    senderName: 'Kiel, me',
-    senderEmail: 'kiel@classicchevy.com',
-    subject: 'Your 2024 GMC Sierra 1500 Awaits? Test Drive This Week',
-    snippet: 'I have good credit around 800. What is an estimate of the rates and terms that you guys can provide?',
-    body: 'Hi Grayson,\n\nThanks for sending over your target numbers. With an 800 score, we can lock in tier-1 financing rates. Let me know what time works best for you to stop by.',
-    htmlBody: null,
-    note: '',
-    timeLabel: '10:05 AM',
-    bucket: 'Today',
-    status: 'inbox',
-    pinned: false,
-    snoozedUntil: null,
-    completedAt: null,
-    unread: true,
-  },
-];
-
-const INITIAL_TASKS = [
-  { id: 't1', text: 'Follow up on dealer warranty quote', done: false, due: 'Today' },
-  { id: 't2', text: 'Review Supabase + Stripe launch checklist', done: false, due: 'Tomorrow' },
+  { id: 'r2', name: 'Invoices & Bills -> Finance', field: 'any', pattern: 'invoice|balance due|statement|payment request|bill', bundle: 'Finance' },
+  { id: 'r3', name: 'Receipts & Orders -> Purchases', field: 'any', pattern: 'receipt|order confirmation|rma|shipped', bundle: 'Purchases' },
 ];
 
 function decodeBase64Url(data) {
@@ -150,7 +98,6 @@ function encodeBase64Url(str) {
 function extractGmailBodies(payload) {
   let plain = '';
   let html = '';
-
   const walk = (part) => {
     if (!part) return;
     if (part.mimeType === 'text/plain' && part.body?.data && !plain) {
@@ -158,20 +105,15 @@ function extractGmailBodies(payload) {
     } else if (part.mimeType === 'text/html' && part.body?.data && !html) {
       html = decodeBase64Url(part.body.data);
     }
-    if (Array.isArray(part.parts)) {
-      part.parts.forEach(walk);
-    }
+    if (Array.isArray(part.parts)) part.parts.forEach(walk);
   };
-
   walk(payload);
   return { plain, html };
 }
 
 function classifyEmail(email, rules, bundleMap) {
   if (email.isReminder) return 'Primary';
-  if (email.manualBundle && bundleMap[email.manualBundle]) {
-    return email.manualBundle;
-  }
+  if (email.manualBundle && bundleMap[email.manualBundle]) return email.manualBundle;
 
   const senderStr = `${email.senderName} ${email.senderEmail}`.toLowerCase();
   const subjectStr = (email.subject || '').toLowerCase();
@@ -179,83 +121,17 @@ function classifyEmail(email, rules, bundleMap) {
 
   for (const rule of rules) {
     if (!rule.pattern?.trim() || !bundleMap[rule.bundle]) continue;
-    const tokens = rule.pattern
-      .toLowerCase()
-      .split('|')
-      .map((t) => t.trim())
-      .filter(Boolean);
-
-    const target =
-      rule.field === 'sender'
-        ? senderStr
-        : rule.field === 'subject'
-        ? subjectStr
-        : anyStr;
-
-    if (tokens.some((tok) => target.includes(tok))) {
-      return rule.bundle;
-    }
+    const tokens = rule.pattern.toLowerCase().split('|').map((t) => t.trim()).filter(Boolean);
+    const target = rule.field === 'sender' ? senderStr : rule.field === 'subject' ? subjectStr : anyStr;
+    if (tokens.some((tok) => target.includes(tok))) return rule.bundle;
   }
-
-  const labels = email.gmailLabels || [];
-  if (labels.includes('CATEGORY_UPDATES') && bundleMap['Updates']) return 'Updates';
-  if (labels.includes('CATEGORY_PROMOTIONS') && bundleMap['Promos']) return 'Promos';
-  if (labels.includes('CATEGORY_SOCIAL') && bundleMap['Social']) return 'Social';
-
   return 'Primary';
-}
-
-function parseEmlContent(rawText, fileName) {
-  const lines = rawText.split(/\r?\n/);
-  let subject = fileName.replace(/\.eml$/i, '');
-  let from = 'Imported Sender <imported@example.com>';
-  let bodyStartIdx = 0;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (line.trim() === '') {
-      bodyStartIdx = i + 1;
-      break;
-    }
-    if (/^Subject:/i.test(line)) subject = line.replace(/^Subject:\s*/i, '').trim();
-    if (/^From:/i.test(line)) from = line.replace(/^From:\s*/i, '').trim();
-  }
-
-  const emailMatch = from.match(/<([^>]+)>/);
-  const senderEmail = emailMatch ? emailMatch[1] : from;
-  const senderName = emailMatch ? from.replace(/<[^>]+>/, '').replace(/"/g, '').trim() || senderEmail : from;
-  const rawBody = lines.slice(bodyStartIdx).join('\n').trim();
-  const isHtml = /<html|<body|<div|<table/i.test(rawBody);
-  const plainText = rawBody.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
-
-  return {
-    id: `eml-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    isReminder: false,
-    gmailId: null,
-    threadId: null,
-    messageIdHeader: null,
-    gmailLabels: [],
-    senderName,
-    senderEmail,
-    subject,
-    snippet: plainText.slice(0, 140) || '(No preview text)',
-    body: plainText || '(Empty message body)',
-    htmlBody: isHtml ? rawBody : null,
-    note: '',
-    timeLabel: 'Just now',
-    bucket: 'Today',
-    status: 'inbox',
-    pinned: false,
-    snoozedUntil: null,
-    completedAt: null,
-    unread: true,
-  };
 }
 
 export default function App() {
   const [bundles, setBundles] = useState(() => {
     try {
-      const saved = localStorage.getItem('classic_inbox_bundles_v1');
+      const saved = localStorage.getItem('classic_inbox_bundles_v2');
       return saved ? JSON.parse(saved) : DEFAULT_BUNDLES;
     } catch {
       return DEFAULT_BUNDLES;
@@ -264,16 +140,16 @@ export default function App() {
 
   const [emails, setEmails] = useState(() => {
     try {
-      const saved = localStorage.getItem('classic_inbox_emails_v1');
-      return saved ? JSON.parse(saved) : INITIAL_EMAILS;
+      const saved = localStorage.getItem('classic_inbox_emails_v2');
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_EMAILS;
+      return [];
     }
   });
 
   const [rules, setRules] = useState(() => {
     try {
-      const saved = localStorage.getItem('classic_inbox_rules_v1');
+      const saved = localStorage.getItem('classic_inbox_rules_v2');
       return saved ? JSON.parse(saved) : DEFAULT_RULES;
     } catch {
       return DEFAULT_RULES;
@@ -282,10 +158,10 @@ export default function App() {
 
   const [tasks, setTasks] = useState(() => {
     try {
-      const saved = localStorage.getItem('classic_inbox_tasks_v1');
-      return saved ? JSON.parse(saved) : INITIAL_TASKS;
+      const saved = localStorage.getItem('classic_inbox_tasks_v2');
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_TASKS;
+      return [];
     }
   });
 
@@ -295,20 +171,19 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('classic_inbox_dark') === 'true');
   const [compactMode, setCompactMode] = useState(() => localStorage.getItem('classic_inbox_compact') === 'true');
 
-  const [activeNav, setActiveNav] = useState('inbox');
-  const [sidebarOpen, setSidebarOpen] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= 768 : true
-  );
-  const [rightPanelOpen, setRightPanelOpen] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
-  );
-  const [rightTab, setRightTab] = useState('all'); // 'all' | 'tasks' | 'calendar'
+  const [activeNav, setActiveNav] = useState('inbox'); // 'inbox' | 'pinned' | 'snoozed' | 'done' | 'bundle:id'
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [rightTab, setRightTab] = useState('all');
 
-  const [pinnedOnly, setPinnedOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedBundles, setExpandedBundles] = useState({});
   const [openEmailId, setOpenEmailId] = useState(null);
   const [snoozePickerId, setSnoozePickerId] = useState(null);
+  const [customSnoozeModal, setCustomSnoozeModal] = useState(null); // emailId
+  const [customSnoozeVal, setCustomSnoozeVal] = useState('');
+  const [lastSnoozeLabel, setLastSnoozeLabel] = useState(() => localStorage.getItem('classic_inbox_last_snooze') || 'Tomorrow (8 AM)');
+
   const [ruleModalOpen, setRuleModalOpen] = useState(false);
   const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
@@ -318,70 +193,26 @@ export default function App() {
   const [nextPageToken, setNextPageToken] = useState(null);
   const [sessionExpired, setSessionExpired] = useState(false);
 
-  const [draggedEmailId, setDraggedEmailId] = useState(null);
-  const [dragOverTarget, setDragOverTarget] = useState(null);
-  const [swipeState, setSwipeState] = useState({ id: null, deltaX: 0 });
-  const touchStartRef = useRef({ x: 0, y: 0, id: null });
-
-  const [newRule, setNewRule] = useState({ name: '', field: 'sender', pattern: '', bundle: 'Updates' });
-  const [newBundleForm, setNewBundleForm] = useState({ label: '', color: '#E91E63' });
-
   const [googleClientId, setGoogleClientId] = useState(() => localStorage.getItem('classic_inbox_client_id') || '');
   const [accessToken, setAccessToken] = useState(() => {
     const savedToken = localStorage.getItem('classic_inbox_token');
     const expiry = Number(localStorage.getItem('classic_inbox_token_expiry') || 0);
-    if (savedToken && Date.now() < expiry - 60000) {
-      return savedToken;
-    }
-    return null;
+    return savedToken && Date.now() < expiry - 60000 ? savedToken : null;
   });
 
-  const [composeForm, setComposeForm] = useState({
-    mode: 'new',
-    to: '',
-    subject: '',
-    body: '',
-    threadId: null,
-    inReplyTo: null,
-  });
+  const [composeForm, setComposeForm] = useState({ mode: 'new', to: '', subject: '', body: '', threadId: null, inReplyTo: null });
+  const [editingBundle, setEditingBundle] = useState(null);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('classic_inbox_bundles_v1', JSON.stringify(bundles));
-    } catch {}
-  }, [bundles]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('classic_inbox_emails_v1', JSON.stringify(emails));
-    } catch {}
-  }, [emails]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('classic_inbox_rules_v1', JSON.stringify(rules));
-    } catch {}
-  }, [rules]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('classic_inbox_tasks_v1', JSON.stringify(tasks));
-    } catch {}
-  }, [tasks]);
-
-  useEffect(() => {
-    localStorage.setItem('classic_inbox_dark', String(darkMode));
-  }, [darkMode]);
-
-  useEffect(() => {
-    localStorage.setItem('classic_inbox_compact', String(compactMode));
-  }, [compactMode]);
+  useEffect(() => { localStorage.setItem('classic_inbox_bundles_v2', JSON.stringify(bundles)); }, [bundles]);
+  useEffect(() => { localStorage.setItem('classic_inbox_emails_v2', JSON.stringify(emails)); }, [emails]);
+  useEffect(() => { localStorage.setItem('classic_inbox_rules_v2', JSON.stringify(rules)); }, [rules]);
+  useEffect(() => { localStorage.setItem('classic_inbox_tasks_v2', JSON.stringify(tasks)); }, [tasks]);
+  useEffect(() => { localStorage.setItem('classic_inbox_dark', String(darkMode)); }, [darkMode]);
+  useEffect(() => { localStorage.setItem('classic_inbox_compact', String(compactMode)); }, [compactMode]);
 
   const bundleMap = useMemo(() => {
     const map = {};
-    bundles.forEach((b) => {
-      map[b.id] = b;
-    });
+    bundles.forEach((b) => { map[b.id] = b; });
     return map;
   }, [bundles]);
 
@@ -390,29 +221,21 @@ export default function App() {
     setTimeout(() => setToast(null), 3200);
   };
 
+  // Google Calendar API
   const fetchCalendarEvents = useCallback(async (token) => {
     if (!token) return;
     try {
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
       const endOfRange = new Date(startOfDay.getTime() + 7 * 86400000);
-
       const url = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
       url.searchParams.set('timeMin', startOfDay.toISOString());
       url.searchParams.set('timeMax', endOfRange.toISOString());
       url.searchParams.set('singleEvents', 'true');
       url.searchParams.set('orderBy', 'startTime');
-      url.searchParams.set('maxResults', '15');
 
-      const res = await fetch(url.toString(), {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) {
-        setCalendarError(true);
-        return;
-      }
-
+      const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) { setCalendarError(true); return; }
       setCalendarError(false);
       const data = await res.json();
       setCalendarEvents(data.items || []);
@@ -420,6 +243,74 @@ export default function App() {
       setCalendarError(true);
     }
   }, []);
+
+  // Google Tasks API
+  const fetchGoogleTasks = useCallback(async (token) => {
+    if (!token) return;
+    try {
+      const res = await fetch('https://tasks.googleapis.com/tasks/v1/lists/@default/tasks?showCompleted=false', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.items) {
+          const mapped = data.items.map((t) => ({
+            id: t.id,
+            text: t.title,
+            done: t.status === 'completed',
+            due: t.due ? new Date(t.due).toLocaleDateString() : 'Today',
+            googleTaskId: t.id,
+          }));
+          setTasks(mapped);
+        }
+      }
+    } catch {}
+  }, []);
+
+  const addGoogleTask = async (text) => {
+    if (!text.trim()) return;
+    const newTask = { id: `task-${Date.now()}`, text: text.trim(), done: false, due: 'Today' };
+    setTasks((prev) => [newTask, ...prev]);
+
+    if (accessToken) {
+      try {
+        const res = await fetch('https://tasks.googleapis.com/tasks/v1/lists/@default/tasks', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: text.trim() }),
+        });
+        const data = await res.json();
+        if (data.id) {
+          setTasks((prev) => prev.map((t) => (t.id === newTask.id ? { ...t, googleTaskId: data.id } : t)));
+        }
+      } catch {}
+    }
+  };
+
+  const toggleGoogleTask = async (task) => {
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: !t.done } : t)));
+    if (accessToken && task.googleTaskId) {
+      try {
+        await fetch(`https://tasks.googleapis.com/tasks/v1/lists/@default/tasks/${task.googleTaskId}`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: !task.done ? 'completed' : 'needsAction' }),
+        });
+      } catch {}
+    }
+  };
+
+  const deleteGoogleTask = async (task) => {
+    setTasks((prev) => prev.filter((t) => t.id !== task.id));
+    if (accessToken && task.googleTaskId) {
+      try {
+        await fetch(`https://tasks.googleapis.com/tasks/v1/lists/@default/tasks/${task.googleTaskId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+      } catch {}
+    }
+  };
 
   const fetchGmailMessages = useCallback(async (token, pageToken = null) => {
     if (!token) return;
@@ -430,19 +321,14 @@ export default function App() {
       url.searchParams.set('q', 'in:inbox');
       if (pageToken) url.searchParams.set('pageToken', pageToken);
 
-      const listRes = await fetch(url.toString(), {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
+      const listRes = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
       if (listRes.status === 401) {
         localStorage.removeItem('classic_inbox_token');
-        localStorage.removeItem('classic_inbox_token_expiry');
         setAccessToken(null);
         setSessionExpired(true);
         setSyncing(false);
         return;
       }
-
       setSessionExpired(false);
       const listData = await listRes.json();
       setNextPageToken(listData.nextPageToken || null);
@@ -457,10 +343,9 @@ export default function App() {
           const chunk = listData.messages.slice(i, i + 20);
           const chunkResults = await Promise.all(
             chunk.map(async (m) => {
-              const msgRes = await fetch(
-                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`,
-                { headers: { Authorization: `Bearer ${token}` } }
-              );
+              const msgRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
               const msgData = await msgRes.json();
               const headers = msgData.payload?.headers || [];
               const from = headers.find((h) => h.name.toLowerCase() === 'from')?.value || 'Gmail Sender';
@@ -494,7 +379,7 @@ export default function App() {
                 senderEmail: emailMatch ? emailMatch[1] : from,
                 subject,
                 snippet: msgData.snippet || '',
-                body: plain || msgData.snippet || '(No plain-text body)',
+                body: plain || msgData.snippet || '',
                 htmlBody: html || null,
                 note: '',
                 timeLabel,
@@ -511,132 +396,97 @@ export default function App() {
         }
 
         setEmails((prev) => {
-          const localReminders = prev.filter((item) => item.isReminder);
           const existingMap = new Map(prev.map((item) => [item.id, item]));
-          const merged = fetched.map((f) => {
+          return fetched.map((f) => {
             const old = existingMap.get(f.id);
-            return old
-              ? {
-                  ...f,
-                  pinned: old.pinned,
-                  note: old.note || '',
-                  status: old.status === 'snoozed' ? 'snoozed' : 'inbox',
-                  snoozedUntil: old.snoozedUntil,
-                  manualBundle: old.manualBundle,
-                }
-              : f;
+            return old ? { ...f, pinned: old.pinned, note: old.note || '', status: old.status, snoozedUntil: old.snoozedUntil, manualBundle: old.manualBundle } : f;
           });
-          if (pageToken) {
-            const newIds = new Set(merged.map((m) => m.id));
-            return [...prev.filter((p) => !newIds.has(p.id)), ...merged];
-          }
-          return [...localReminders, ...merged];
         });
-
-        showToast(`Synced ${fetched.length} inbox emails`);
+        showToast(`Synced ${fetched.length} emails`);
       }
     } catch {
-      showToast('Sync interrupted—try refreshing');
+      showToast('Sync interrupted');
     } finally {
       setSyncing(false);
     }
   }, []);
 
-  const triggerGoogleAuth = useCallback(
-    (clientIdToUse) => {
-      if (!clientIdToUse?.trim()) return;
-      const runInit = () => {
-        if (!window.google?.accounts?.oauth2) {
-          showToast('Google sign-in script loading—tap again in 1 second');
-          return;
-        }
-        const client = window.google.accounts.oauth2.initTokenClient({
-          client_id: clientIdToUse.trim(),
-          scope:
-            'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar.readonly',
-          callback: (tokenResponse) => {
-            if (tokenResponse?.access_token) {
-              const expiresInSec = Number(tokenResponse.expires_in || 3500);
-              localStorage.setItem('classic_inbox_token', tokenResponse.access_token);
-              localStorage.setItem('classic_inbox_token_expiry', String(Date.now() + expiresInSec * 1000));
-              setAccessToken(tokenResponse.access_token);
-              setSessionExpired(false);
-              setConnectModalOpen(false);
-              fetchGmailMessages(tokenResponse.access_token);
-              fetchCalendarEvents(tokenResponse.access_token);
-            }
-          },
-        });
-        client.requestAccessToken();
-      };
+  const triggerGoogleAuth = useCallback((clientIdToUse) => {
+    if (!clientIdToUse?.trim()) return;
+    const runInit = () => {
+      if (!window.google?.accounts?.oauth2) return;
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: clientIdToUse.trim(),
+        scope: 'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/tasks',
+        callback: (tokenResponse) => {
+          if (tokenResponse?.access_token) {
+            const expiresInSec = Number(tokenResponse.expires_in || 3500);
+            localStorage.setItem('classic_inbox_token', tokenResponse.access_token);
+            localStorage.setItem('classic_inbox_token_expiry', String(Date.now() + expiresInSec * 1000));
+            setAccessToken(tokenResponse.access_token);
+            setSessionExpired(false);
+            setConnectModalOpen(false);
+            fetchGmailMessages(tokenResponse.access_token);
+            fetchCalendarEvents(tokenResponse.access_token);
+            fetchGoogleTasks(tokenResponse.access_token);
+          }
+        },
+      });
+      client.requestAccessToken();
+    };
 
-      const scriptId = 'google-gis-script';
-      if (!document.getElementById(scriptId)) {
-        const s = document.createElement('script');
-        s.id = scriptId;
-        s.src = 'https://accounts.google.com/gsi/client';
-        s.async = true;
-        s.onload = runInit;
-        document.body.appendChild(s);
-      } else {
-        runInit();
-      }
-    },
-    [fetchGmailMessages, fetchCalendarEvents]
-  );
+    const scriptId = 'google-gis-script';
+    if (!document.getElementById(scriptId)) {
+      const s = document.createElement('script');
+      s.id = scriptId;
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.async = true;
+      s.onload = runInit;
+      document.body.appendChild(s);
+    } else {
+      runInit();
+    }
+  }, [fetchGmailMessages, fetchCalendarEvents, fetchGoogleTasks]);
 
   useEffect(() => {
     if (accessToken) {
       fetchGmailMessages(accessToken);
       fetchCalendarEvents(accessToken);
+      fetchGoogleTasks(accessToken);
     } else if (googleClientId) {
       setSessionExpired(true);
     }
   }, []);
 
   const classifiedEmails = useMemo(() => {
-    return emails.map((e) => ({
-      ...e,
-      bundle: classifyEmail(e, rules, bundleMap),
-    }));
+    return emails.map((e) => ({ ...e, bundle: classifyEmail(e, rules, bundleMap) }));
   }, [emails, rules, bundleMap]);
 
   const visibleEmails = useMemo(() => {
-    const filtered = classifiedEmails.filter((e) => {
+    return classifiedEmails.filter((e) => {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const hay = `${e.senderName} ${e.senderEmail} ${e.subject} ${e.snippet} ${e.body} ${e.note || ''}`.toLowerCase();
+        const hay = `${e.senderName} ${e.senderEmail} ${e.subject} ${e.snippet} ${e.note || ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      if (activeNav === 'inbox') {
-        if (e.status !== 'inbox') return false;
-        if (pinnedOnly && !e.pinned) return false;
-        return true;
-      }
+      if (activeNav === 'inbox') return e.status === 'inbox';
+      if (activeNav === 'pinned') return e.status === 'inbox' && e.pinned;
       if (activeNav === 'snoozed') return e.status === 'snoozed';
       if (activeNav === 'done') return e.status === 'done';
       if (activeNav.startsWith('bundle:')) {
         const bName = activeNav.replace('bundle:', '');
-        return e.status !== 'done' && e.bundle === bName;
+        return e.status === 'inbox' && e.bundle === bName;
       }
       return true;
     });
-
-    if (activeNav === 'done') {
-      return [...filtered].sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
-    }
-    return filtered;
-  }, [classifiedEmails, activeNav, pinnedOnly, searchQuery]);
+  }, [classifiedEmails, activeNav, searchQuery]);
 
   const modifyGmailLabels = async (gmailId, addLabelIds = [], removeLabelIds = []) => {
     if (!accessToken || !gmailId) return;
     try {
       await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailId}/modify`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ addLabelIds, removeLabelIds }),
       });
     } catch {}
@@ -644,1597 +494,188 @@ export default function App() {
 
   const togglePin = (id, ev) => {
     ev?.stopPropagation();
-    setEmails((prev) =>
-      prev.map((e) =>
-        e.id === id ? { ...e, pinned: !e.pinned, status: e.status === 'done' ? 'inbox' : e.status } : e
-      )
-    );
+    setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, pinned: !e.pinned } : e)));
   };
 
   const markDone = (id, ev) => {
     ev?.stopPropagation();
     const target = emails.find((e) => e.id === id);
-    if (target?.gmailId) modifyGmailLabels(target.gmailId, [], ['INBOX']);
-    setEmails((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, status: 'done', pinned: false, completedAt: Date.now() } : e))
-    );
+    if (target?.gmailId) modifyGmailLabels(target.gmailId, [], ['INBOX']); // Archives in Gmail
+    setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, status: 'done', pinned: false, completedAt: Date.now() } : e)));
     if (openEmailId === id) setOpenEmailId(null);
-    showToast(accessToken && target?.gmailId ? 'Archived in Gmail' : 'Marked Done');
-  };
-
-  const trashEmail = (id, ev) => {
-    ev?.stopPropagation();
-    const target = emails.find((e) => e.id === id);
-    if (target?.gmailId) modifyGmailLabels(target.gmailId, ['TRASH'], ['INBOX']);
-    setEmails((prev) => prev.filter((e) => e.id !== id));
-    if (openEmailId === id) setOpenEmailId(null);
-    showToast('Moved to Trash');
-  };
-
-  const moveBackToInbox = (id, ev) => {
-    ev?.stopPropagation();
-    const target = emails.find((e) => e.id === id);
-    if (target?.gmailId) modifyGmailLabels(target.gmailId, ['INBOX'], []);
-    setEmails((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, status: 'inbox', snoozedUntil: null, completedAt: null } : e))
-    );
-    showToast('Moved back to Inbox');
+    showToast('Archived in Gmail (Done)');
   };
 
   const snoozeEmail = (id, label, ev) => {
     ev?.stopPropagation();
-    setEmails((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, status: 'snoozed', pinned: false, snoozedUntil: label } : e))
-    );
+    setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, status: 'snoozed', pinned: false, snoozedUntil: label } : e)));
     setSnoozePickerId(null);
+    setCustomSnoozeModal(null);
+    setLastSnoozeLabel(label);
+    localStorage.setItem('classic_inbox_last_snooze', label);
     if (openEmailId === id) setOpenEmailId(null);
     showToast(`Snoozed until ${label}`);
   };
 
-  const updateEmailNote = (id, noteText) => {
-    setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, note: noteText } : e)));
+  const moveBundleOrder = (index, direction) => {
+    const updated = [...bundles];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= updated.length) return;
+    const temp = updated[index];
+    updated[index] = updated[targetIndex];
+    updated[targetIndex] = temp;
+    setBundles(updated);
   };
-
-  // Right-Panel Task Handlers
-  const addTask = (textToAdd, emailId = null) => {
-    const clean = (textToAdd || newTaskText).trim();
-    if (!clean) return;
-    setTasks((prev) => [{ id: `task-${Date.now()}`, text: clean, done: false, due: 'Today', emailId }, ...prev]);
-    if (!textToAdd) setNewTaskText('');
-    setRightPanelOpen(true);
-    showToast('Added to Tasks');
-  };
-
-  const toggleTask = (id) => {
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
-  };
-
-  const deleteTask = (id) => {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
-  };
-
-  const openGoogleCalendarCreate = (email = null) => {
-    const base = new URL('https://calendar.google.com/calendar/render');
-    base.searchParams.set('action', 'TEMPLATE');
-    if (email) {
-      base.searchParams.set('text', email.subject);
-      base.searchParams.set('details', `From: ${email.senderName} <${email.senderEmail}>\n\n${email.snippet}`);
-    }
-    window.open(base.toString(), '_blank', 'noopener,noreferrer');
-  };
-
-  const createCustomBundle = () => {
-    const cleanLabel = newBundleForm.label.trim();
-    if (!cleanLabel) return;
-    const id = cleanLabel.replace(/[^a-zA-Z0-9_-]/g, '');
-    if (!id || bundleMap[id]) {
-      showToast('Bundle already exists or invalid name');
-      return;
-    }
-    setBundles((prev) => [
-      ...prev,
-      {
-        id,
-        label: cleanLabel,
-        color: newBundleForm.color,
-        iconName: 'BellRing',
-        inlineBundle: true,
-        custom: true,
-      },
-    ]);
-    setNewBundleForm({ label: '', color: '#E91E63' });
-    showToast(`Created "${cleanLabel}" bundle`);
-  };
-
-  const deleteCustomBundle = (bundleId) => {
-    setBundles((prev) => prev.filter((b) => b.id !== bundleId));
-    setRules((prev) => prev.filter((r) => r.bundle !== bundleId));
-    if (activeNav === `bundle:${bundleId}`) setActiveNav('inbox');
-    showToast('Deleted custom bundle');
-  };
-
-  const assignSenderRule = (email, targetBundle) => {
-    if (email.isReminder) return;
-    const cleanPattern = email.senderEmail.toLowerCase();
-    const ruleId = `r-${Date.now()}`;
-    setRules((prev) => [
-      {
-        id: ruleId,
-        name: `${email.senderName} -> ${targetBundle}`,
-        field: 'sender',
-        pattern: cleanPattern,
-        bundle: targetBundle,
-      },
-      ...prev.filter((r) => !(r.field === 'sender' && r.pattern.toLowerCase() === cleanPattern)),
-    ]);
-    setEmails((prev) =>
-      prev.map((e) =>
-        e.id === email.id || e.senderEmail.toLowerCase() === cleanPattern
-          ? { ...e, manualBundle: targetBundle, status: e.status === 'done' ? 'inbox' : e.status }
-          : e
-      )
-    );
-    showToast(`Moved to ${targetBundle} & saved permanent rule for ${email.senderName}`);
-  };
-
-  const handleDropOnTarget = (e, targetType, targetValue) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const emailId = e.dataTransfer?.getData('text/plain') || draggedEmailId;
-    setDraggedEmailId(null);
-    setDragOverTarget(null);
-
-    if (!emailId) return;
-    const emailObj = classifiedEmails.find((item) => item.id === emailId);
-    if (!emailObj) return;
-
-    if (targetType === 'task') {
-      addTask(emailObj.subject, emailObj.id);
-    } else if (targetType === 'bundle') {
-      assignSenderRule(emailObj, targetValue);
-    } else if (targetType === 'status') {
-      if (targetValue === 'done') {
-        markDone(emailId);
-      } else if (targetValue === 'snoozed') {
-        snoozeEmail(emailId, 'Tomorrow (8 AM)');
-      } else if (targetValue === 'inbox') {
-        moveBackToInbox(emailId);
-        assignSenderRule(emailObj, 'Primary');
-      }
-    }
-  };
-
-  const handleTouchStart = (e, id) => {
-    const touch = e.touches[0];
-    touchStartRef.current = { x: touch.clientX, y: touch.clientY, id };
-  };
-
-  const handleTouchMove = (e, id) => {
-    if (touchStartRef.current.id !== id) return;
-    const touch = e.touches[0];
-    const dx = touch.clientX - touchStartRef.current.x;
-    const dy = touch.clientY - touchStartRef.current.y;
-    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 12) {
-      setSwipeState({ id, deltaX: Math.max(-130, Math.min(130, dx)) });
-    }
-  };
-
-  const handleTouchEnd = (id) => {
-    if (swipeState.id === id) {
-      if (swipeState.deltaX > 85) {
-        markDone(id);
-      } else if (swipeState.deltaX < -85) {
-        snoozeEmail(id, 'Tomorrow (8 AM)');
-      }
-    }
-    touchStartRef.current = { x: 0, y: 0, id: null };
-    setSwipeState({ id: null, deltaX: 0 });
-  };
-
-  const openReplyComposer = (email) => {
-    const cleanSubj = /^re:/i.test(email.subject) ? email.subject : `Re: ${email.subject}`;
-    setComposeForm({
-      mode: 'reply',
-      to: email.senderEmail,
-      subject: cleanSubj,
-      body: `\n\n--- On ${email.timeLabel}, ${email.senderName} wrote: ---\n${email.body}`,
-      threadId: email.threadId || null,
-      inReplyTo: email.messageIdHeader || null,
-    });
-    setComposeOpen(true);
-  };
-
-  const openForwardComposer = (email) => {
-    const cleanSubj = /^fwd:/i.test(email.subject) ? email.subject : `Fwd: ${email.subject}`;
-    setComposeForm({
-      mode: 'forward',
-      to: '',
-      subject: cleanSubj,
-      body: `\n\n---------- Forwarded message ---------\nFrom: ${email.senderName} <${email.senderEmail}>\nSubject: ${email.subject}\n\n${email.body}`,
-      threadId: null,
-      inReplyTo: null,
-    });
-    setComposeOpen(true);
-  };
-
-  const handleSendEmail = async () => {
-    if (!composeForm.to.trim()) {
-      showToast('Enter a recipient email address');
-      return;
-    }
-
-    if (accessToken) {
-      try {
-        const headers = [
-          `To: ${composeForm.to.trim()}`,
-          `Subject: ${composeForm.subject}`,
-          'Content-Type: text/plain; charset="UTF-8"',
-        ];
-        if (composeForm.inReplyTo) {
-          headers.push(`In-Reply-To: ${composeForm.inReplyTo}`);
-          headers.push(`References: ${composeForm.inReplyTo}`);
-        }
-        const rawMime = `${headers.join('\r\n')}\r\n\r\n${composeForm.body}`;
-        const payload = { raw: encodeBase64Url(rawMime) };
-        if (composeForm.threadId) payload.threadId = composeForm.threadId;
-
-        const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload),
-        });
-
-        if (res.ok) {
-          setComposeOpen(false);
-          setComposeForm({ mode: 'new', to: '', subject: '', body: '', threadId: null, inReplyTo: null });
-          showToast('Sent via Gmail!');
-          return;
-        }
-      } catch {}
-    }
-
-    setComposeOpen(false);
-    setComposeForm({ mode: 'new', to: '', subject: '', body: '', threadId: null, inReplyTo: null });
-    showToast(accessToken ? 'Failed to send via Gmail' : 'Connect Gmail first to send live emails');
-  };
-
-  const sweepBundle = (bucket, bundleName, ev) => {
-    ev?.stopPropagation();
-    const now = Date.now();
-    setEmails((prev) =>
-      prev.map((e) => {
-        const b = classifyEmail(e, rules, bundleMap);
-        if (e.status === 'inbox' && e.bucket === bucket && b === bundleName && !e.pinned) {
-          if (e.gmailId) modifyGmailLabels(e.gmailId, [], ['INBOX']);
-          return { ...e, status: 'done', completedAt: now };
-        }
-        return e;
-      })
-    );
-    showToast(`Swept ${bundleName} in ${bucket}`);
-  };
-
-  const sweepBucket = (bucket) => {
-    const now = Date.now();
-    setEmails((prev) =>
-      prev.map((e) => {
-        if (e.status === 'inbox' && e.bucket === bucket && !e.pinned) {
-          if (e.gmailId) modifyGmailLabels(e.gmailId, [], ['INBOX']);
-          return { ...e, status: 'done', completedAt: now };
-        }
-        return e;
-      })
-    );
-    showToast(`Swept unpinned items in ${bucket}`);
-  };
-
-  const handleEmlFiles = async (fileList) => {
-    const imported = [];
-    for (const file of Array.from(fileList)) {
-      if (!file.name.toLowerCase().endsWith('.eml')) continue;
-      const text = await file.text();
-      imported.push(parseEmlContent(text, file.name));
-    }
-    if (imported.length > 0) {
-      setEmails((prev) => [...imported, ...prev]);
-      setConnectModalOpen(false);
-      showToast(`Imported ${imported.length} email(s)`);
-    }
-  };
-
-  const simulateWakeSnoozed = () => {
-    setEmails((prev) =>
-      prev.map((e) =>
-        e.status === 'snoozed' ? { ...e, status: 'inbox', bucket: 'Today', timeLabel: 'Snoozed -> Now', snoozedUntil: null } : e
-      )
-    );
-    setActiveNav('inbox');
-    showToast('Snoozed items returned to Today');
-  };
-
-  const resetDemoData = () => {
-    setEmails(INITIAL_EMAILS);
-    setRules(DEFAULT_RULES);
-    setBundles(DEFAULT_BUNDLES);
-    setTasks(INITIAL_TASKS);
-    showToast('Sample data & rules reset');
-  };
-
-  const openEmail = classifiedEmails.find((e) => e.id === openEmailId);
-  const headerColor =
-    activeNav === 'done'
-      ? 'bg-[#0F9D58]'
-      : activeNav === 'snoozed'
-      ? 'bg-[#EF6C00]'
-      : 'bg-[#4285F4]';
 
   const cardSurface = darkMode ? 'bg-gray-900 border-gray-800 text-gray-100' : 'bg-white border-gray-200 text-gray-900';
-  const rowHover = darkMode ? 'hover:bg-gray-800/80 border-gray-800' : 'hover:bg-gray-50 border-gray-100';
-
-  const renderEmailRow = (email, nested = false) => {
-    const meta = bundleMap[email.bundle] || bundleMap.Primary;
-    const isBeingDragged = draggedEmailId === email.id;
-    const activeSwipeX = swipeState.id === email.id ? swipeState.deltaX : 0;
-
-    return (
-      <div key={email.id} className="relative overflow-hidden border-b border-gray-100 dark:border-gray-800 last:border-b-0">
-        {activeSwipeX !== 0 && (
-          <div
-            className={`absolute inset-0 flex items-center justify-between px-5 text-white text-xs font-bold ${
-              activeSwipeX > 0 ? 'bg-emerald-600' : 'bg-amber-600'
-            }`}
-          >
-            <span className="flex items-center gap-1.5">
-              <Check className="w-4 h-4" /> Done
-            </span>
-            <span className="flex items-center gap-1.5">
-              Snooze <Clock className="w-4 h-4" />
-            </span>
-          </div>
-        )}
-
-        <div
-          draggable
-          onDragStart={(e) => {
-            setDraggedEmailId(email.id);
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/plain', email.id);
-          }}
-          onDragEnd={() => {
-            setDraggedEmailId(null);
-            setDragOverTarget(null);
-          }}
-          onTouchStart={(e) => handleTouchStart(e, email.id)}
-          onTouchMove={(e) => handleTouchMove(e, email.id)}
-          onTouchEnd={() => handleTouchEnd(email.id)}
-          style={{ transform: activeSwipeX ? `translateX(${activeSwipeX}px)` : undefined }}
-          onClick={() => {
-            setOpenEmailId(email.id);
-            if (email.unread && email.gmailId) modifyGmailLabels(email.gmailId, [], ['UNREAD']);
-            setEmails((prev) => prev.map((item) => (item.id === email.id ? { ...item, unread: false } : item)));
-          }}
-          className={`group relative flex items-center gap-2.5 px-3 sm:px-4 ${
-            compactMode ? 'py-2' : 'py-3'
-          } ${darkMode ? 'bg-gray-900' : 'bg-white'} ${rowHover} cursor-grab active:cursor-grabbing transition-transform select-none ${
-            nested ? (darkMode ? 'pl-7 sm:pl-8 bg-gray-950/50' : 'pl-7 sm:pl-8 bg-slate-50/50') : ''
-          } ${isBeingDragged ? 'opacity-40' : ''}`}
-        >
-          <GripVertical className="w-4 h-4 text-gray-400 opacity-40 group-hover:opacity-100 shrink-0 hidden sm:block" />
-
-          <div
-            className={`${compactMode ? 'w-7 h-7 text-xs' : 'w-9 h-9 text-sm'} rounded-full flex items-center justify-center text-white font-semibold shrink-0`}
-            style={{ backgroundColor: meta.color }}
-          >
-            {(email.senderName || '?')[0].toUpperCase()}
-          </div>
-
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center justify-between gap-2">
-              <span
-                className={`text-sm truncate ${
-                  email.unread
-                    ? darkMode
-                      ? 'font-bold text-white'
-                      : 'font-bold text-gray-900'
-                    : darkMode
-                    ? 'font-medium text-gray-300'
-                    : 'font-medium text-gray-700'
-                }`}
-              >
-                {email.senderName}
-              </span>
-              <span className="text-xs text-gray-400 shrink-0 group-hover:hidden">{email.timeLabel}</span>
-            </div>
-
-            <div className={`text-sm truncate ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-              <span className={email.unread ? 'font-semibold' : ''}>{email.subject}</span>
-              <span className="text-gray-400"> — {email.snippet}</span>
-            </div>
-
-            {email.note && (
-              <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-100/90 text-amber-900 text-[11px] font-medium">
-                <StickyNote className="w-3 h-3 shrink-0" />
-                <span className="truncate max-w-md">{email.note}</span>
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
-            <button
-              title="Add to Tasks"
-              onClick={(ev) => {
-                ev.stopPropagation();
-                addTask(email.subject, email.id);
-              }}
-              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-blue-500"
-            >
-              <ListTodo className="w-4 h-4" />
-            </button>
-
-            <button
-              title="Pin to Inbox"
-              onClick={(ev) => togglePin(email.id, ev)}
-              className={`p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 ${
-                email.pinned ? 'text-blue-500 opacity-100' : 'text-gray-400'
-              }`}
-            >
-              <Pin className="w-4 h-4" />
-            </button>
-
-            <div className="relative">
-              <button
-                title="Snooze"
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  setSnoozePickerId(snoozePickerId === email.id ? null : email.id);
-                }}
-                className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400"
-              >
-                <Clock className="w-4 h-4" />
-              </button>
-              {snoozePickerId === email.id && (
-                <div
-                  onClick={(ev) => ev.stopPropagation()}
-                  className={`absolute right-0 top-9 z-30 w-44 rounded-lg shadow-xl border py-1 text-sm ${cardSurface}`}
-                >
-                  {['Later today (6 PM)', 'Tomorrow (8 AM)', 'Next week (Mon)'].map((slot) => (
-                    <button
-                      key={slot}
-                      onClick={(ev) => snoozeEmail(email.id, slot, ev)}
-                      className="w-full text-left px-3 py-2 hover:bg-amber-500/10"
-                    >
-                      {slot}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {email.status === 'done' ? (
-              <button
-                title="Move back to Inbox"
-                onClick={(ev) => moveBackToInbox(email.id, ev)}
-                className="p-2 rounded-full hover:bg-blue-500/10 text-blue-500"
-              >
-                <RotateCcw className="w-4 h-4" />
-              </button>
-            ) : (
-              <button
-                title="Mark Done"
-                onClick={(ev) => markDone(email.id, ev)}
-                className="p-2 rounded-full hover:bg-emerald-500/10 text-emerald-500"
-              >
-                <Check className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const formatEventTime = (ev) => {
-    const startRaw = ev.start?.dateTime || ev.start?.date;
-    if (!startRaw) return '';
-    if (!ev.start?.dateTime) return 'All day';
-    const d = new Date(startRaw);
-    const isToday = d.toDateString() === new Date().toDateString();
-    const timeStr = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    return isToday ? timeStr : `${d.toLocaleDateString([], { weekday: 'short' })} ${timeStr}`;
-  };
-
-  const buckets = ['Today', 'Yesterday', 'Earlier this month'];
-  const openTasksCount = tasks.filter((t) => !t.done).length;
 
   return (
-    <div
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => {
-        e.preventDefault();
-        if (e.dataTransfer?.files?.length) handleEmlFiles(e.dataTransfer.files);
-      }}
-      className={`h-full flex flex-col overflow-hidden transition-colors ${
-        darkMode ? 'bg-gray-950 text-gray-100' : 'bg-[#f2f2f2] text-gray-900'
-      }`}
-      style={{ paddingTop: 'env(safe-area-inset-top)' }}
-    >
-      {/* Top App Bar */}
-      <header className={`${headerColor} text-white shadow-md px-3 sm:px-5 h-14 flex items-center justify-between gap-2 shrink-0 transition-colors z-30`}>
-        <div className="flex items-center gap-2 sm:gap-3">
-          <button
-            onClick={() => setSidebarOpen((v) => !v)}
-            className="p-2 rounded-full hover:bg-white/15 transition-colors"
-            aria-label="Toggle Menu"
-          >
+    <div className={`h-full flex flex-col overflow-hidden ${darkMode ? 'bg-gray-950 text-gray-100' : 'bg-[#f2f2f2] text-gray-900'}`}>
+      {/* Top Header Bar */}
+      <header className={`bg-[#4285F4] text-white shadow-md px-4 h-14 flex items-center justify-between gap-3 shrink-0 z-30`}>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setSidebarOpen((v) => !v)} className="p-2 rounded-full hover:bg-white/15">
             <Menu className="w-5 h-5" />
           </button>
-          <span className="font-semibold text-lg tracking-tight">
-            {activeNav === 'inbox'
-              ? 'Inbox'
-              : activeNav === 'snoozed'
-              ? 'Snoozed'
-              : activeNav === 'done'
-              ? 'Done'
-              : bundleMap[activeNav.replace('bundle:', '')]?.label || 'Inbox'}
-          </span>
+          <span className="font-semibold text-lg tracking-tight">Abstract Inbox</span>
         </div>
 
         <div className="flex-1 max-w-xl">
-          <div className="relative flex items-center bg-white/20 focus-within:bg-white focus-within:text-gray-900 rounded-md px-3 py-1.5 transition-colors">
-            <Search className="w-4 h-4 mr-2 opacity-80 shrink-0" />
+          <div className="relative flex items-center bg-white/20 rounded-md px-3 py-1.5">
+            <Search className="w-4 h-4 mr-2 opacity-80" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search mail, notes & bundles..."
-              className="w-full bg-transparent text-sm placeholder-white/80 focus:placeholder-gray-400 focus:outline-none"
+              placeholder="Search mail & tasks..."
+              className="w-full bg-transparent text-sm placeholder-white/80 focus:outline-none"
             />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="ml-1">
-                <X className="w-4 h-4" />
-              </button>
-            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          {activeNav === 'inbox' && (
-            <button
-              onClick={() => setPinnedOnly((p) => !p)}
-              title="Show Pinned Only"
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                pinnedOnly ? 'bg-white text-blue-600 shadow' : 'bg-white/15 text-white hover:bg-white/25'
-              }`}
-            >
-              <Pin className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Pinned</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => setCompactMode((c) => !c)}
-            title={compactMode ? 'Comfortable Density' : 'Compact Density'}
-            className={`p-2 rounded-full transition-colors hidden sm:flex ${
-              compactMode ? 'bg-white text-blue-600' : 'bg-white/15 hover:bg-white/25 text-white'
-            }`}
-          >
-            <AlignJustify className="w-3.5 h-3.5" />
+        <div className="flex items-center gap-2">
+          <button onClick={() => setDarkMode((d) => !d)} className="p-2 rounded-full bg-white/15 hover:bg-white/25">
+            {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
-
-          <button
-            onClick={() => setDarkMode((d) => !d)}
-            title={darkMode ? 'Light Mode' : 'Dark Mode'}
-            className="p-2 rounded-full bg-white/15 hover:bg-white/25 text-white transition-colors"
-          >
-            {darkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-          </button>
-
-          {accessToken && (
-            <button
-              onClick={() => {
-                fetchGmailMessages(accessToken);
-                fetchCalendarEvents(accessToken);
-              }}
-              disabled={syncing}
-              title="Refresh Inbox & Calendar"
-              className="p-2 rounded-full bg-white/15 hover:bg-white/25 text-white transition-colors"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-            </button>
-          )}
-
-          <button
-            onClick={() => {
-              if (sessionExpired && googleClientId) {
-                triggerGoogleAuth(googleClientId);
-              } else {
-                setConnectModalOpen(true);
-              }
-            }}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium transition-colors ${
-              sessionExpired
-                ? 'bg-amber-400 text-gray-900 font-bold hover:bg-amber-300'
-                : 'bg-white/15 hover:bg-white/25 text-white'
-            }`}
-          >
+          <button onClick={() => setConnectModalOpen(true)} className="flex items-center gap-1 bg-white/15 px-3 py-1.5 rounded-full text-xs font-medium">
             <KeyRound className="w-3.5 h-3.5" />
-            <span className="hidden lg:inline">
-              {accessToken ? 'Connected' : sessionExpired ? 'Reconnect' : 'Connect'}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setRightPanelOpen((r) => !r)}
-            title={rightPanelOpen ? 'Hide Calendar & Tasks' : 'Show Calendar & Tasks'}
-            className={`p-2 rounded-full transition-colors relative ${
-              rightPanelOpen ? 'bg-white text-blue-600' : 'bg-white/15 hover:bg-white/25 text-white'
-            }`}
-          >
-            {rightPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
-            {!rightPanelOpen && openTasksCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-amber-400 text-gray-950 text-[10px] font-bold flex items-center justify-center">
-                {openTasksCount}
-              </span>
-            )}
+            <span>{accessToken ? 'Connected' : 'Connect'}</span>
           </button>
         </div>
       </header>
 
-      {/* Non-Blocking Reconnect Banner when 1-Hour OAuth Token Expires */}
-      {sessionExpired && !accessToken && googleClientId && (
-        <div className="bg-amber-500 text-gray-950 px-4 py-2 text-xs font-medium flex items-center justify-between gap-2 shrink-0 z-20">
-          <span>Your 1-hour Google session expired. Tap to sync latest Gmail &amp; Calendar.</span>
-          <button
-            onClick={() => triggerGoogleAuth(googleClientId)}
-            className="bg-gray-900 text-white px-3 py-1 rounded-full font-semibold hover:bg-gray-800 shrink-0"
-          >
-            Reconnect Google
-          </button>
-        </div>
-      )}
-
-      {/* Main 3-Column Workspace */}
+      {/* Main Layout */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Left Navigation Sidebar */}
+        {/* Sidebar */}
         {sidebarOpen && (
-          <aside
-            className={`w-56 border-r flex flex-col justify-between py-3 shrink-0 z-20 absolute md:static inset-y-0 left-0 shadow-lg md:shadow-none ${
-              darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'
-            }`}
-          >
+          <aside className={`w-60 border-r flex flex-col justify-between py-3 shrink-0 z-20 ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
             <div className="overflow-y-auto px-2 space-y-1">
               {[
                 { id: 'inbox', label: 'Inbox', icon: InboxIcon, color: 'text-blue-500' },
+                { id: 'pinned', label: 'Pinned', icon: Pin, color: 'text-amber-500' },
                 { id: 'snoozed', label: 'Snoozed', icon: Clock, color: 'text-amber-500' },
-                { id: 'done', label: 'Done', icon: CheckCheck, color: 'text-emerald-500' },
+                { id: 'done', label: 'Done (Archived)', icon: CheckCheck, color: 'text-emerald-500' },
               ].map((item) => {
                 const Icon = item.icon;
-                const active = activeNav === item.id;
-                const dropKey = `nav-${item.id}`;
-                const isDragOver = dragOverTarget === dropKey;
-
                 return (
                   <button
                     key={item.id}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      setDragOverTarget(dropKey);
-                    }}
-                    onDragLeave={() => setDragOverTarget(null)}
-                    onDrop={(e) => handleDropOnTarget(e, 'status', item.id)}
-                    onClick={() => {
-                      setActiveNav(item.id);
-                      setOpenEmailId(null);
-                      if (window.innerWidth < 768) setSidebarOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                      isDragOver
-                        ? 'ring-2 ring-blue-500 bg-blue-500/10 scale-[1.02]'
-                        : active
-                        ? darkMode
-                          ? 'bg-blue-500/20 text-blue-400'
-                          : 'bg-blue-50 text-blue-700'
-                        : darkMode
-                        ? 'text-gray-300 hover:bg-gray-800'
-                        : 'text-gray-700 hover:bg-gray-100'
-                    }`}
+                    onClick={() => { setActiveNav(item.id); setOpenEmailId(null); }}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium ${activeNav === item.id ? 'bg-blue-500/20 text-blue-400' : 'hover:bg-gray-500/10'}`}
                   >
                     <Icon className={`w-4 h-4 ${item.color}`} />
                     <span>{item.label}</span>
-                    {isDragOver && <span className="ml-auto text-[10px] font-bold text-blue-500">Drop</span>}
                   </button>
                 );
               })}
 
               <div className="pt-3 pb-1 px-3 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-                <span>Bundles</span>
-                <button
-                  onClick={() => setRuleModalOpen(true)}
-                  title="New Custom Bundle"
-                  className="hover:text-blue-500"
-                >
-                  <FolderPlus className="w-3.5 h-3.5" />
-                </button>
+                <span>Bundles (Buckets)</span>
+                <button onClick={() => setRuleModalOpen(true)}><FolderPlus className="w-3.5 h-3.5" /></button>
               </div>
 
-              {bundles
-                .filter((b) => b.id !== 'Primary')
-                .map((b) => {
-                  const Icon = ICON_MAP[b.iconName] || Bell;
-                  const active = activeNav === `bundle:${b.id}`;
-                  const count = classifiedEmails.filter((e) => e.status !== 'done' && e.bundle === b.id).length;
-                  const dropKey = `nav-bundle-${b.id}`;
-                  const isDragOver = dragOverTarget === dropKey;
-
-                  return (
+              {bundles.filter((b) => b.id !== 'Primary').map((b, idx) => {
+                const active = activeNav === `bundle:${b.id}`;
+                return (
+                  <div key={b.id} className="flex items-center justify-between group px-2 py-1 rounded hover:bg-gray-500/10">
                     <button
-                      key={b.id}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        setDragOverTarget(dropKey);
-                      }}
-                      onDragLeave={() => setDragOverTarget(null)}
-                      onDrop={(e) => handleDropOnTarget(e, 'bundle', b.id)}
-                      onClick={() => {
-                        setActiveNav(`bundle:${b.id}`);
-                        setOpenEmailId(null);
-                        if (window.innerWidth < 768) setSidebarOpen(false);
-                      }}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-all ${
-                        isDragOver
-                          ? 'ring-2 ring-blue-500 bg-blue-500/10 font-semibold scale-[1.02]'
-                          : active
-                          ? darkMode
-                            ? 'bg-gray-800 font-semibold text-white'
-                            : 'bg-gray-100 font-semibold text-gray-900'
-                          : darkMode
-                          ? 'text-gray-400 hover:bg-gray-800/60'
-                          : 'text-gray-600 hover:bg-gray-50'
-                      }`}
+                      onClick={() => { setActiveNav(`bundle:${b.id}`); setOpenEmailId(null); }}
+                      className={`flex items-center gap-2 text-sm truncate flex-1 ${active ? 'font-bold text-blue-400' : ''}`}
                     >
-                      <span className="flex items-center gap-3 truncate">
-                        <Icon className="w-4 h-4 shrink-0" style={{ color: b.color }} />
-                        <span className="truncate">{b.label}</span>
-                      </span>
-                      {isDragOver ? (
-                        <span className="text-[10px] font-bold text-blue-500">+ Rule</span>
-                      ) : (
-                        count > 0 && <span className="text-xs text-gray-400">{count}</span>
-                      )}
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: b.color }} />
+                      <span className="truncate">{b.label}</span>
                     </button>
-                  );
-                })}
-            </div>
-
-            <div className={`px-2 pt-2 border-t space-y-1 ${darkMode ? 'border-gray-800' : 'border-gray-100'}`}>
-              <button
-                onClick={() => setRuleModalOpen(true)}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium ${
-                  darkMode ? 'text-gray-300 hover:bg-gray-800' : 'text-gray-700 hover:bg-gray-100'
-                }`}
-              >
-                <Settings className="w-4 h-4 text-gray-400" />
-                <span>Bundles &amp; Rules</span>
-              </button>
-              <button
-                onClick={resetDemoData}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-gray-400 hover:text-gray-500"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Reset Demo Data</span>
-              </button>
+                    <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5">
+                      <button onClick={() => moveBundleOrder(idx, 'up')} className="p-1 hover:text-blue-500"><ArrowUp className="w-3 h-3" /></button>
+                      <button onClick={() => moveBundleOrder(idx, 'down')} className="p-1 hover:text-blue-500"><ArrowDown className="w-3 h-3" /></button>
+                      <button onClick={() => setEditingBundle(b)} className="p-1 hover:text-blue-500"><Settings className="w-3 h-3" /></button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </aside>
         )}
 
-        {/* Center Inbox / Reader Column */}
-        <main className={`flex-1 overflow-y-auto ${openEmail ? 'px-0 sm:px-5 pb-4 pt-0' : 'px-2 sm:px-5 py-4'}`}>
-          <div className="max-w-4xl mx-auto pb-20">
-            {openEmail ? (
-              <div className={`sm:rounded-lg shadow-sm border-x border-b sm:border ${cardSurface}`}>
-                {/* Sticky Action Toolbar — Always Visible While Scrolling */}
-                <div
-                  className={`sticky top-0 z-20 px-3 sm:px-4 py-2.5 border-b flex flex-wrap items-center justify-between gap-2 backdrop-blur-md shadow-sm ${
-                    darkMode ? 'bg-gray-900/95 border-gray-800' : 'bg-white/95 border-gray-200'
-                  }`}
-                >
-                  <button
-                    onClick={() => setOpenEmailId(null)}
-                    className="flex items-center gap-1.5 text-sm font-medium opacity-80 hover:opacity-100 px-1.5 py-1 rounded hover:bg-gray-500/10"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                    <span>Back</span>
-                  </button>
-
-                  <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
-                    <select
-                      value={openEmail.bundle}
-                      onChange={(e) => assignSenderRule(openEmail, e.target.value)}
-                      className={`text-xs border rounded px-2 py-1.5 ${
-                        darkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-300 text-gray-700'
-                      }`}
-                    >
-                      {bundles.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          Bundle: {b.label}
-                        </option>
-                      ))}
-                    </select>
-
-                    <button
-                      onClick={() => openReplyComposer(openEmail)}
-                      className="flex items-center gap-1 px-2 py-1.5 rounded hover:bg-gray-500/10 text-xs font-medium"
-                    >
-                      <Reply className="w-4 h-4" />
-                      <span className="hidden sm:inline">Reply</span>
-                    </button>
-
-                    <button
-                      onClick={() => openForwardComposer(openEmail)}
-                      className="flex items-center gap-1 px-2 py-1.5 rounded hover:bg-gray-500/10 text-xs font-medium"
-                    >
-                      <Forward className="w-4 h-4" />
-                      <span className="hidden sm:inline">Forward</span>
-                    </button>
-
-                    <button
-                      onClick={() => addTask(openEmail.subject, openEmail.id)}
-                      className="p-2 rounded-full hover:bg-gray-500/10 text-blue-500"
-                      title="Add to Tasks"
-                    >
-                      <ListTodo className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      onClick={() => openGoogleCalendarCreate(openEmail)}
-                      className="p-2 rounded-full hover:bg-gray-500/10 text-indigo-500"
-                      title="Schedule in Google Calendar"
-                    >
-                      <CalendarIcon className="w-4 h-4" />
-                    </button>
-
-                    <div className="relative">
-                      <button
-                        onClick={(ev) => {
-                          ev.stopPropagation();
-                          setSnoozePickerId(snoozePickerId === openEmail.id ? null : openEmail.id);
-                        }}
-                        className="p-2 rounded-full hover:bg-gray-500/10"
-                        title="Snooze"
-                      >
-                        <Clock className="w-4 h-4" />
-                      </button>
-                      {snoozePickerId === openEmail.id && (
-                        <div
-                          onClick={(ev) => ev.stopPropagation()}
-                          className={`absolute right-0 top-9 z-30 w-44 rounded-lg shadow-xl border py-1 text-sm ${cardSurface}`}
-                        >
-                          {['Later today (6 PM)', 'Tomorrow (8 AM)', 'Next week (Mon)'].map((slot) => (
-                            <button
-                              key={slot}
-                              onClick={(ev) => snoozeEmail(openEmail.id, slot, ev)}
-                              className="w-full text-left px-3 py-2 hover:bg-amber-500/10"
-                            >
-                              {slot}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={(ev) => togglePin(openEmail.id, ev)}
-                      className={`p-2 rounded-full hover:bg-gray-500/10 ${openEmail.pinned ? 'text-blue-500' : ''}`}
-                      title="Pin"
-                    >
-                      <Pin className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      onClick={(ev) => trashEmail(openEmail.id, ev)}
-                      className="p-2 rounded-full hover:bg-red-500/10 hover:text-red-500"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      onClick={(ev) => markDone(openEmail.id, ev)}
-                      className="p-2 rounded-full hover:bg-emerald-500/10 text-emerald-500"
-                      title="Done / Archive"
-                    >
-                      <Check className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Private Sticky Note Bar */}
-                <div className="px-4 sm:px-5 py-2.5 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200/60 dark:border-amber-900/40 flex items-center gap-2">
-                  <StickyNote className="w-4 h-4 text-amber-600 shrink-0" />
-                  <input
-                    type="text"
-                    value={openEmail.note || ''}
-                    onChange={(e) => updateEmailNote(openEmail.id, e.target.value)}
-                    placeholder="Add a private sticky note to this thread (visible only to you)..."
-                    className="w-full bg-transparent text-xs text-amber-900 dark:text-amber-200 placeholder-amber-600/60 focus:outline-none"
-                  />
-                </div>
-
-                {/* Message Body */}
-                <div className="p-4 sm:p-6">
-                  <h2 className="text-lg sm:text-xl font-semibold mb-3">{openEmail.subject}</h2>
-                  <div className="flex items-center justify-between text-sm text-gray-500 pb-4 mb-4 border-b border-gray-200 dark:border-gray-800 gap-2">
-                    <div className="min-w-0 truncate">
-                      <span className="font-semibold text-gray-800 dark:text-gray-200">{openEmail.senderName}</span>{' '}
-                      <span className="text-xs">&lt;{openEmail.senderEmail}&gt;</span>
-                    </div>
-                    <span className="text-xs shrink-0">{openEmail.timeLabel}</span>
-                  </div>
-
-                  {openEmail.htmlBody ? (
-                    <iframe
-                      title="Email Content"
-                      srcDoc={openEmail.htmlBody}
-                      sandbox="allow-popups allow-popups-to-escape-sandbox"
-                      className="w-full min-h-[480px] border-0 rounded bg-white"
-                    />
-                  ) : (
-                    <div className="text-sm whitespace-pre-line leading-relaxed">{openEmail.body}</div>
-                  )}
-
-                  <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-800 flex items-center gap-3">
-                    <button
-                      onClick={() => openReplyComposer(openEmail)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-full border border-gray-300 dark:border-gray-700 hover:bg-gray-500/10 text-sm font-medium"
-                    >
-                      <Reply className="w-4 h-4" />
-                      <span>Reply</span>
-                    </button>
-                    <button
-                      onClick={() => openForwardComposer(openEmail)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-full border border-gray-300 dark:border-gray-700 hover:bg-gray-500/10 text-sm font-medium"
-                    >
-                      <Forward className="w-4 h-4" />
-                      <span>Forward</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : activeNav === 'inbox' ? (
-              <>
-                {buckets.map((bucket) => {
-                  const bucketItems = visibleEmails.filter((e) => e.bucket === bucket);
-                  if (bucketItems.length === 0) return null;
-
-                  const directItems = bucketItems.filter((e) => !bundleMap[e.bundle]?.inlineBundle);
-                  const bundledGroups = {};
-                  bucketItems
-                    .filter((e) => bundleMap[e.bundle]?.inlineBundle)
-                    .forEach((e) => {
-                      if (!bundledGroups[e.bundle]) bundledGroups[e.bundle] = [];
-                      bundledGroups[e.bundle].push(e);
-                    });
-
-                  return (
-                    <section key={bucket} className="mb-6">
-                      <div className="flex items-center justify-between px-1 mb-2">
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">{bucket}</h3>
-                        <button
-                          onClick={() => sweepBucket(bucket)}
-                          className="text-xs text-gray-400 hover:text-emerald-500 flex items-center gap-1 transition-colors"
-                        >
-                          <CheckCheck className="w-3.5 h-3.5" />
-                          <span>Sweep unpinned</span>
-                        </button>
-                      </div>
-
-                      <div className={`rounded-lg shadow-sm border overflow-hidden ${cardSurface}`}>
-                        {directItems.map((email) => renderEmailRow(email, false))}
-
-                        {Object.entries(bundledGroups).map(([bundleName, items]) => {
-                          const meta = bundleMap[bundleName];
-                          if (!meta) return null;
-                          const Icon = ICON_MAP[meta.iconName] || Bell;
-                          const expandKey = `${bucket}-${bundleName}`;
-                          const isExpanded = !!expandedBundles[expandKey];
-                          const inlineDropKey = `inline-${expandKey}`;
-                          const isDragOverInline = dragOverTarget === inlineDropKey;
-
-                          return (
-                            <div key={expandKey} className="border-b border-gray-100 dark:border-gray-800 last:border-b-0">
-                              <div
-                                onDragOver={(e) => {
-                                  e.preventDefault();
-                                  setDragOverTarget(inlineDropKey);
-                                }}
-                                onDragLeave={() => setDragOverTarget(null)}
-                                onDrop={(e) => handleDropOnTarget(e, 'bundle', bundleName)}
-                                onClick={() =>
-                                  setExpandedBundles((prev) => ({ ...prev, [expandKey]: !prev[expandKey] }))
-                                }
-                                className={`group flex items-center gap-3 px-4 ${
-                                  compactMode ? 'py-2' : 'py-3'
-                                } cursor-pointer transition-all ${
-                                  isDragOverInline
-                                    ? 'bg-blue-500/10 ring-2 ring-inset ring-blue-500'
-                                    : rowHover
-                                }`}
-                              >
-                                <div
-                                  className={`${compactMode ? 'w-7 h-7' : 'w-9 h-9'} rounded-full flex items-center justify-center text-white shrink-0`}
-                                  style={{ backgroundColor: meta.color }}
-                                >
-                                  <Icon className="w-4 h-4" />
-                                </div>
-
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-semibold text-sm" style={{ color: meta.color }}>
-                                      {meta.label} ({items.length})
-                                    </span>
-                                    {isExpanded ? (
-                                      <ChevronDown className="w-4 h-4 text-gray-400" />
-                                    ) : (
-                                      <ChevronRight className="w-4 h-4 text-gray-400" />
-                                    )}
-                                    {isDragOverInline && (
-                                      <span className="text-xs font-semibold text-blue-500">
-                                        Drop to move &amp; create sender rule
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="text-xs text-gray-400 truncate">
-                                    {items.map((i) => i.senderName.split(',')[0]).join(', ')}
-                                  </div>
-                                </div>
-
-                                <button
-                                  title={`Sweep ${meta.label}`}
-                                  onClick={(ev) => sweepBundle(bucket, bundleName, ev)}
-                                  className="p-2 rounded-full hover:bg-emerald-500/10 text-emerald-500 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
-                                >
-                                  <CheckCheck className="w-4 h-4" />
-                                </button>
-                              </div>
-
-                              {isExpanded && (
-                                <div className="border-t border-gray-100 dark:border-gray-800">
-                                  {items.map((item) => renderEmailRow(item, true))}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </section>
-                  );
-                })}
-
-                {accessToken && nextPageToken && (
-                  <div className="flex justify-center mt-4">
-                    <button
-                      onClick={() => fetchGmailMessages(accessToken, nextPageToken)}
-                      disabled={syncing}
-                      className={`px-4 py-2 rounded-full border shadow-sm text-xs font-medium ${cardSurface}`}
-                    >
-                      {syncing ? 'Loading...' : 'Load Older Emails (Next 100)'}
-                    </button>
-                  </div>
-                )}
-              </>
+        {/* Center Inbox */}
+        <main className="flex-1 overflow-y-auto p-4">
+          <div className="max-w-4xl mx-auto space-y-3">
+            {visibleEmails.length === 0 ? (
+              <div className="p-12 text-center text-gray-400">All clear! No messages here.</div>
             ) : (
-              <div>
-                {activeNav === 'snoozed' && visibleEmails.length > 0 && (
-                  <div className="mb-3 flex justify-end">
-                    <button
-                      onClick={simulateWakeSnoozed}
-                      className="text-xs bg-amber-600 text-white px-3 py-1.5 rounded-full shadow-sm hover:bg-amber-700"
-                    >
-                      Simulate Time Passing (Wake Snoozed)
-                    </button>
+              visibleEmails.map((email) => (
+                <div key={email.id} onClick={() => setOpenEmailId(email.id)} className={`p-3 rounded-lg border shadow-sm cursor-pointer flex items-center justify-between ${cardSurface}`}>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold text-sm truncate">{email.senderName}</div>
+                    <div className="text-xs truncate">{email.subject} — <span className="text-gray-400">{email.snippet}</span></div>
                   </div>
-                )}
-                <div className={`rounded-lg shadow-sm border overflow-hidden ${cardSurface}`}>
-                  {visibleEmails.length === 0 ? (
-                    <div className="p-12 text-center text-gray-400 text-sm">
-                      All clear! Nothing here right now.
-                    </div>
-                  ) : (
-                    visibleEmails.map((email) => renderEmailRow(email, false))
-                  )}
+                  <div className="flex items-center gap-2">
+                    <button onClick={(ev) => togglePin(email.id, ev)} className={`p-1.5 rounded ${email.pinned ? 'text-blue-500' : 'text-gray-400'}`}><Pin className="w-4 h-4" /></button>
+                    <button onClick={(ev) => markDone(email.id, ev)} className="p-1.5 rounded text-emerald-500 hover:bg-emerald-500/10"><Check className="w-4 h-4" /></button>
+                  </div>
                 </div>
-              </div>
+              ))
             )}
           </div>
         </main>
 
-        {/* Right-Side Panel: Google Calendar + Tasks */}
+        {/* Right Panel (Google Calendar + Real Google Tasks) */}
         {rightPanelOpen && (
-          <aside
-            className={`w-72 sm:w-80 border-l flex flex-col shrink-0 z-20 absolute lg:static inset-y-0 right-0 shadow-xl lg:shadow-none ${
-              darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'
-            }`}
-          >
-            {/* Right Panel Header & Tabs */}
-            <div className="px-3 py-2.5 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between gap-1">
-              <div className="flex items-center gap-1 text-xs font-semibold">
-                {[
-                  { id: 'all', label: 'Today' },
-                  { id: 'tasks', label: `Tasks (${openTasksCount})` },
-                  { id: 'calendar', label: 'Calendar' },
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setRightTab(tab.id)}
-                    className={`px-2.5 py-1 rounded-md transition-colors ${
-                      rightTab === tab.id
-                        ? 'bg-blue-600 text-white'
-                        : 'text-gray-500 hover:bg-gray-500/10'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={() => setRightPanelOpen(false)}
-                className="p-1 rounded hover:bg-gray-500/10 text-gray-400"
-                title="Close Panel"
-              >
-                <X className="w-4 h-4" />
-              </button>
+          <aside className={`w-80 border-l flex flex-col shrink-0 ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
+            <div className="p-3 border-b flex items-center justify-between text-xs font-semibold">
+              <span>Google Tasks &amp; Calendar</span>
+              <button onClick={() => setRightPanelOpen(false)}><X className="w-4 h-4" /></button>
             </div>
-
-            <div className="flex-1 overflow-y-auto p-3 space-y-5">
-              {/* TASKS SECTION (Also acts as a Drop Zone for emails!) */}
-              {(rightTab === 'all' || rightTab === 'tasks') && (
-                <div
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDragOverTarget('right-tasks');
-                  }}
-                  onDragLeave={() => setDragOverTarget(null)}
-                  onDrop={(e) => handleDropOnTarget(e, 'task', null)}
-                  className={`rounded-lg transition-all ${
-                    dragOverTarget === 'right-tasks' ? 'ring-2 ring-blue-500 bg-blue-500/5 p-2' : ''
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold uppercase tracking-wider text-blue-500 flex items-center gap-1.5">
-                      <ListTodo className="w-3.5 h-3.5" />
-                      <span>Tasks</span>
-                    </span>
-                    <span className="text-[11px] text-gray-400">Drag email here</span>
-                  </div>
-
-                  {/* Quick Add Task Input */}
-                  <div className="flex items-center gap-1.5 mb-2.5">
-                    <input
-                      type="text"
-                      value={newTaskText}
-                      onChange={(e) => setNewTaskText(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && addTask()}
-                      placeholder="Add a task..."
-                      className={`flex-1 text-xs border rounded-lg px-2.5 py-2 focus:outline-none ${
-                        darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'
-                      }`}
-                    />
-                    <button
-                      onClick={() => addTask()}
-                      className="p-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white shrink-0"
-                      title="Add Task"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  {/* Task Items */}
-                  <div className="space-y-1.5">
-                    {tasks.length === 0 ? (
-                      <div className="text-xs text-gray-400 py-3 text-center">No tasks yet.</div>
-                    ) : (
-                      tasks.map((task) => (
-                        <div
-                          key={task.id}
-                          className={`group flex items-start gap-2 p-2 rounded-lg border text-xs ${
-                            darkMode ? 'border-gray-800 bg-gray-800/40' : 'border-gray-100 bg-gray-50/70'
-                          }`}
-                        >
-                          <button
-                            onClick={() => toggleTask(task.id)}
-                            className={`mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
-                              task.done
-                                ? 'bg-emerald-500 border-emerald-500 text-white'
-                                : 'border-gray-400 hover:border-blue-500'
-                            }`}
-                          >
-                            {task.done && <Check className="w-2.5 h-2.5" />}
-                          </button>
-
-                          <div
-                            onClick={() => task.emailId && setOpenEmailId(task.emailId)}
-                            className={`flex-1 min-w-0 ${task.emailId ? 'cursor-pointer hover:underline' : ''}`}
-                          >
-                            <div className={task.done ? 'line-through text-gray-400' : ''}>{task.text}</div>
-                            {task.emailId && (
-                              <span className="text-[10px] text-blue-500 inline-flex items-center gap-0.5 mt-0.5">
-                                <Mail className="w-2.5 h-2.5" /> Linked email
-                              </span>
-                            )}
-                          </div>
-
-                          <button
-                            onClick={() => deleteTask(task.id)}
-                            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 p-0.5"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
+            <div className="p-3 space-y-4 flex-1 overflow-y-auto">
+              <div>
+                <h4 className="text-xs font-bold uppercase text-blue-500 mb-2">Google Tasks</h4>
+                <div className="flex gap-1 mb-2">
+                  <input
+                    type="text"
+                    value={newTaskText}
+                    onChange={(e) => setNewTaskText(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (addGoogleTask(newTaskText), setNewTaskText(''))}
+                    placeholder="Add task..."
+                    className="flex-1 text-xs border rounded px-2 py-1.5 bg-transparent"
+                  />
+                  <button onClick={() => (addGoogleTask(newTaskText), setNewTaskText(''))} className="bg-blue-600 text-white px-3 py-1.5 rounded text-xs">Add</button>
                 </div>
-              )}
-
-              {/* GOOGLE CALENDAR SECTION */}
-              {(rightTab === 'all' || rightTab === 'calendar') && (
-                <div className={rightTab === 'all' ? 'pt-3 border-t border-gray-200 dark:border-gray-800' : ''}>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold uppercase tracking-wider text-indigo-500 flex items-center gap-1.5">
-                      <CalendarIcon className="w-3.5 h-3.5" />
-                      <span>Google Calendar</span>
-                    </span>
-                    <button
-                      onClick={() => openGoogleCalendarCreate(openEmail)}
-                      className="text-[11px] text-indigo-500 hover:underline flex items-center gap-1 font-medium"
-                    >
-                      <Plus className="w-3 h-3" /> New Event
-                    </button>
-                  </div>
-
-                  {!accessToken ? (
-                    <div className="p-3 rounded-lg border border-dashed border-gray-300 dark:border-gray-700 text-center space-y-2">
-                      <p className="text-xs text-gray-400">Connect Google to view upcoming events here.</p>
-                      <button
-                        onClick={() =>
-                          googleClientId ? triggerGoogleAuth(googleClientId) : setConnectModalOpen(true)
-                        }
-                        className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-full font-medium hover:bg-indigo-700"
-                      >
-                        Sync Google Calendar
-                      </button>
+                <div className="space-y-1">
+                  {tasks.map((t) => (
+                    <div key={t.id} className="flex items-center justify-between text-xs p-1.5 rounded bg-gray-500/5">
+                      <span className={t.done ? 'line-through text-gray-400' : ''}>{t.text}</span>
+                      <div className="flex gap-1">
+                        <button onClick={() => toggleGoogleTask(t)} className="text-emerald-500"><Check className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => deleteGoogleTask(t)} className="text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
                     </div>
-                  ) : calendarError ? (
-                    <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs space-y-2">
-                      <p className="text-amber-600 dark:text-amber-300">
-                        Calendar permission needed. Re-authorize once to load your schedule.
-                      </p>
-                      <button
-                        onClick={() => triggerGoogleAuth(googleClientId)}
-                        className="text-xs bg-amber-500 text-gray-950 px-3 py-1 rounded-full font-semibold"
-                      >
-                        Grant Calendar Access
-                      </button>
-                    </div>
-                  ) : calendarEvents.length === 0 ? (
-                    <div className="text-xs text-gray-400 py-3 text-center">No upcoming events in the next 7 days.</div>
-                  ) : (
-                    <div className="space-y-2">
-                      {calendarEvents.map((ev) => (
-                        <a
-                          key={ev.id}
-                          href={ev.htmlLink}
-                          target="_blank"
-                          rel="noreferrer"
-                          className={`block p-2.5 rounded-lg border-l-4 border-l-indigo-500 border transition-colors ${
-                            darkMode
-                              ? 'bg-gray-800/50 border-gray-800 hover:bg-gray-800'
-                              : 'bg-indigo-50/40 border-gray-100 hover:bg-indigo-50'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-1">
-                            <div className="text-xs font-semibold truncate">{ev.summary || '(Busy)'}</div>
-                            <ExternalLink className="w-3 h-3 text-gray-400 shrink-0 mt-0.5" />
-                          </div>
-                          <div className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium mt-0.5">
-                            {formatEventTime(ev)}
-                          </div>
-                          {ev.location && (
-                            <div className="text-[10px] text-gray-400 truncate mt-0.5">{ev.location}</div>
-                          )}
-                        </a>
-                      ))}
-                    </div>
-                  )}
+                  ))}
                 </div>
-              )}
+              </div>
             </div>
           </aside>
         )}
       </div>
-
-      {/* Floating Compose Button */}
-      <button
-        onClick={() => {
-          setComposeForm({ mode: 'new', to: '', subject: '', body: '', threadId: null, inReplyTo: null });
-          setComposeOpen(true);
-        }}
-        className={`fixed bottom-6 ${rightPanelOpen ? 'right-6 lg:right-[21.5rem]' : 'right-6'} w-14 h-14 rounded-full bg-[#DB4437] hover:bg-[#c53929] text-white shadow-lg flex items-center justify-center transition-all hover:scale-105 z-30`}
-        style={{ marginBottom: 'env(safe-area-inset-bottom)' }}
-        title="Compose"
-      >
-        <Plus className="w-6 h-6" />
-      </button>
-
-      {/* Custom Bundles & Routing Rules Modal */}
-      {ruleModalOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
-          <div className={`rounded-xl max-w-lg w-full shadow-2xl overflow-hidden ${cardSurface}`}>
-            <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
-              <h3 className="font-semibold">Custom Bundles &amp; Deterministic Rules</h3>
-              <button onClick={() => setRuleModalOpen(false)}>
-                <X className="w-5 h-5 text-gray-400" />
-              </button>
-            </div>
-            <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto">
-              <div className="space-y-2">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-                  1. Create Custom Bundle
-                </h4>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={newBundleForm.color}
-                    onChange={(e) => setNewBundleForm({ ...newBundleForm, color: e.target.value })}
-                    className="w-9 h-9 rounded cursor-pointer border-0 bg-transparent"
-                  />
-                  <input
-                    type="text"
-                    placeholder="New bundle name (e.g., Clients, Permits, Parts)"
-                    value={newBundleForm.label}
-                    onChange={(e) => setNewBundleForm({ ...newBundleForm, label: e.target.value })}
-                    className={`flex-1 text-xs border rounded px-2.5 py-2 ${
-                      darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-300'
-                    }`}
-                  />
-                  <button
-                    onClick={createCustomBundle}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium px-3 py-2 rounded"
-                  >
-                    Create
-                  </button>
-                </div>
-
-                {bundles.some((b) => b.custom) && (
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {bundles
-                      .filter((b) => b.custom)
-                      .map((b) => (
-                        <span
-                          key={b.id}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium text-white"
-                          style={{ backgroundColor: b.color }}
-                        >
-                          {b.label}
-                          <button onClick={() => deleteCustomBundle(b.id)} className="hover:opacity-75">
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2 border-t border-gray-200 dark:border-gray-800 pt-4">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-                  2. Deterministic Routing Rules (First Match Wins)
-                </h4>
-                <div className="grid grid-cols-2 gap-2">
-                  <select
-                    value={newRule.field}
-                    onChange={(e) => setNewRule({ ...newRule, field: e.target.value })}
-                    className={`text-xs border rounded px-2 py-1.5 ${
-                      darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-300'
-                    }`}
-                  >
-                    <option value="sender">Sender contains</option>
-                    <option value="subject">Subject contains</option>
-                    <option value="any">Any text contains</option>
-                  </select>
-                  <select
-                    value={newRule.bundle}
-                    onChange={(e) => setNewRule({ ...newRule, bundle: e.target.value })}
-                    className={`text-xs border rounded px-2 py-1.5 ${
-                      darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-300'
-                    }`}
-                  >
-                    {bundles.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        Route to: {b.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Keywords separated by | (e.g. receipt|invoice)"
-                    value={newRule.pattern}
-                    onChange={(e) => setNewRule({ ...newRule, pattern: e.target.value })}
-                    className={`flex-1 text-xs border rounded px-2.5 py-1.5 ${
-                      darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-300'
-                    }`}
-                  />
-                  <button
-                    onClick={() => {
-                      if (!newRule.pattern.trim()) return;
-                      setRules((prev) => [
-                        {
-                          id: `r-${Date.now()}`,
-                          name: `${newRule.pattern} -> ${newRule.bundle}`,
-                          field: newRule.field,
-                          pattern: newRule.pattern.trim(),
-                          bundle: newRule.bundle,
-                        },
-                        ...prev,
-                      ]);
-                      setNewRule({ name: '', field: 'sender', pattern: '', bundle: 'Updates' });
-                    }}
-                    className="bg-blue-600 text-white text-xs font-medium px-3 py-1.5 rounded hover:bg-blue-700"
-                  >
-                    Add
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                {rules.map((r, idx) => (
-                  <div
-                    key={r.id}
-                    className="flex items-center justify-between p-2.5 border border-gray-200 dark:border-gray-800 rounded-lg text-xs"
-                  >
-                    <div>
-                      <span className="font-bold text-gray-400 mr-2">#{idx + 1}</span>
-                      <span className="font-semibold">{bundleMap[r.bundle]?.label || r.bundle}</span>
-                      <span className="text-gray-400 ml-2">
-                        ({r.field}: <code className="px-1 rounded bg-gray-500/10">{r.pattern}</code>)
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => setRules((prev) => prev.filter((item) => item.id !== r.id))}
-                      className="text-gray-400 hover:text-red-500 p-1"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Connect Gmail & Calendar Modal */}
-      {connectModalOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
-          <div className={`rounded-xl max-w-md w-full shadow-2xl overflow-hidden ${cardSurface}`}>
-            <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
-              <h3 className="font-semibold">Import .EML or Connect Google</h3>
-              <button onClick={() => setConnectModalOpen(false)}>
-                <X className="w-5 h-5 text-gray-400" />
-              </button>
-            </div>
-            <div className="p-5 space-y-5">
-              <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
-                  Option 1: Upload .EML Files
-                </h4>
-                <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg p-4 cursor-pointer hover:border-blue-500 transition-colors">
-                  <Upload className="w-6 h-6 text-blue-500 mb-1" />
-                  <span className="text-xs font-medium">Click to select .eml files (or drag anywhere)</span>
-                  <input
-                    type="file"
-                    accept=".eml"
-                    multiple
-                    onChange={(e) => e.target.files && handleEmlFiles(e.target.files)}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-
-              <div className="border-t border-gray-200 dark:border-gray-800 pt-4">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
-                  Option 2: Live Gmail + Google Calendar
-                </h4>
-                <input
-                  type="text"
-                  value={googleClientId}
-                  onChange={(e) => setGoogleClientId(e.target.value)}
-                  placeholder="Paste Google Cloud OAuth Client ID..."
-                  className={`w-full text-xs border rounded-lg px-3 py-2 mb-2 ${
-                    darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-300'
-                  }`}
-                />
-                <button
-                  onClick={() => {
-                    if (!googleClientId.trim()) {
-                      showToast('Enter your Google OAuth Client ID first');
-                      return;
-                    }
-                    localStorage.setItem('classic_inbox_client_id', googleClientId.trim());
-                    triggerGoogleAuth(googleClientId.trim());
-                  }}
-                  className="w-full bg-[#4285F4] hover:bg-blue-600 text-white text-xs font-semibold py-2.5 rounded-lg transition-colors"
-                >
-                  Sign in with Google &amp; Sync All
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Compose / Reply / Forward Modal */}
-      {composeOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
-          <div className={`rounded-xl max-w-lg w-full shadow-2xl overflow-hidden ${cardSurface}`}>
-            <div className="px-4 py-3 bg-gray-800 text-white flex items-center justify-between">
-              <span className="text-sm font-medium">
-                {composeForm.mode === 'reply'
-                  ? 'Reply'
-                  : composeForm.mode === 'forward'
-                  ? 'Forward Message'
-                  : 'New Message'}
-              </span>
-              <button onClick={() => setComposeOpen(false)}>
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="p-4 space-y-3">
-              <input
-                type="email"
-                placeholder="To"
-                value={composeForm.to}
-                onChange={(e) => setComposeForm({ ...composeForm, to: e.target.value })}
-                className="w-full bg-transparent text-sm border-b border-gray-200 dark:border-gray-800 pb-2 focus:outline-none"
-              />
-              <input
-                type="text"
-                placeholder="Subject"
-                value={composeForm.subject}
-                onChange={(e) => setComposeForm({ ...composeForm, subject: e.target.value })}
-                className="w-full bg-transparent text-sm border-b border-gray-200 dark:border-gray-800 pb-2 focus:outline-none"
-              />
-              <textarea
-                rows={7}
-                placeholder="Write your message..."
-                value={composeForm.body}
-                onChange={(e) => setComposeForm({ ...composeForm, body: e.target.value })}
-                className="w-full bg-transparent text-sm focus:outline-none resize-none"
-              />
-              <div className="flex justify-end">
-                <button
-                  onClick={handleSendEmail}
-                  className="flex items-center gap-1.5 bg-[#4285F4] text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-blue-600"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>{accessToken ? 'Send via Gmail' : 'Send'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Toast Notification */}
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-4 py-2.5 rounded-full shadow-lg z-50">
-          {toast}
-        </div>
-      )}
     </div>
   );
 }
