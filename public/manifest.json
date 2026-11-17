@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "Inbox",
+  "short_name": "Inbox",
+  "description": "Classic bundled inbox with deterministic zero-duplicate routing",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f2f2f2",
+  "theme_color": "#4285F4",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

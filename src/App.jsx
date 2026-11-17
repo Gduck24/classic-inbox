@@ -1,0 +1,1215 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  Menu,
+  Search,
+  Pin,
+  Clock,
+  Check,
+  CheckCheck,
+  Inbox as InboxIcon,
+  Settings,
+  Tag,
+  ChevronDown,
+  ChevronRight,
+  Plus,
+  Trash2,
+  Upload,
+  KeyRound,
+  X,
+  Mail,
+  Sparkles,
+  ShoppingBag,
+  Landmark,
+  Bell,
+  Users,
+  Plane,
+  ArrowLeft,
+  Send,
+  RotateCcw,
+} from 'lucide-react';
+
+const BUNDLE_META = {
+  Primary: {
+    id: 'Primary',
+    label: 'Primary',
+    color: '#4285F4',
+    bgLight: 'bg-blue-50',
+    textClass: 'text-blue-600',
+    borderClass: 'border-blue-500',
+    icon: Mail,
+    inlineBundle: false,
+  },
+  Updates: {
+    id: 'Updates',
+    label: 'Updates',
+    color: '#FBBC05',
+    bgLight: 'bg-amber-50',
+    textClass: 'text-amber-600',
+    borderClass: 'border-amber-500',
+    icon: Bell,
+    inlineBundle: true,
+  },
+  Finance: {
+    id: 'Finance',
+    label: 'Finance',
+    color: '#0F9D58',
+    bgLight: 'bg-emerald-50',
+    textClass: 'text-emerald-600',
+    borderClass: 'border-emerald-600',
+    icon: Landmark,
+    inlineBundle: true,
+  },
+  Purchases: {
+    id: 'Purchases',
+    label: 'Purchases',
+    color: '#8E24AA',
+    bgLight: 'bg-purple-50',
+    textClass: 'text-purple-600',
+    borderClass: 'border-purple-600',
+    icon: ShoppingBag,
+    inlineBundle: true,
+  },
+  Promos: {
+    id: 'Promos',
+    label: 'Promos',
+    color: '#00ACC1',
+    bgLight: 'bg-cyan-50',
+    textClass: 'text-cyan-600',
+    borderClass: 'border-cyan-600',
+    icon: Sparkles,
+    inlineBundle: true,
+  },
+  Social: {
+    id: 'Social',
+    label: 'Social',
+    color: '#DB4437',
+    bgLight: 'bg-rose-50',
+    textClass: 'text-rose-600',
+    borderClass: 'border-rose-500',
+    icon: Users,
+    inlineBundle: true,
+  },
+  Travel: {
+    id: 'Travel',
+    label: 'Travel',
+    color: '#3F51B5',
+    bgLight: 'bg-indigo-50',
+    textClass: 'text-indigo-600',
+    borderClass: 'border-indigo-600',
+    icon: Plane,
+    inlineBundle: true,
+  },
+};
+
+const DEFAULT_RULES = [
+  { id: 'r1', name: 'Kickstarter -> Updates (Never Duplicate)', field: 'sender', pattern: 'kickstarter', bundle: 'Updates' },
+  { id: 'r2', name: 'ATF eForms -> Updates', field: 'sender', pattern: 'eforms.notifications', bundle: 'Updates' },
+  { id: 'r3', name: 'Invoices & Statements -> Finance', field: 'any', pattern: 'invoice|balance due|statement|payment request', bundle: 'Finance' },
+  { id: 'r4', name: 'Receipts & Orders -> Purchases', field: 'any', pattern: 'receipt|order confirmation|rma|shipped', bundle: 'Purchases' },
+  { id: 'r5', name: 'Deals & Promos -> Promos', field: 'any', pattern: '% off|black friday|sale|unsubscribe', bundle: 'Promos' },
+];
+
+const INITIAL_EMAILS = [
+  {
+    id: 'e1',
+    senderName: 'CARS_social, me',
+    senderEmail: 'socialmedia@gm.com',
+    subject: 'Help for long time Chevy Family - Gduck24 on GM-Trucks.com',
+    snippet: 'I will be using the dealer for all of it. On Tue, Nov 17, 2026 at 9:27 AM CARS_socialmedia wrote...',
+    body: 'Hi Grayson,\n\nI will be using the dealer for all of it. Thanks for reaching out regarding your 2020 Z71 and your long history with Chevy trucks.\n\nBest,\nCARS Social Media Team',
+    timeLabel: '10:04 AM',
+    bucket: 'Today',
+    status: 'inbox',
+    pinned: true,
+    snoozedUntil: null,
+    unread: true,
+  },
+  {
+    id: 'e2',
+    senderName: 'Kiel, me',
+    senderEmail: 'kiel@classicchevy.com',
+    subject: 'Your 2024 GMC Sierra 1500 Awaits? Test Drive This Week',
+    snippet: 'I have good credit around 800. What is an estimate of the rates and terms that you guys can provide?',
+    body: 'Hi Grayson,\n\nThanks for sending over your target numbers. With an 800 score, we can lock in tier-1 financing rates. Let me know what time works best for you to stop by.',
+    timeLabel: '10:05 AM',
+    bucket: 'Today',
+    status: 'inbox',
+    pinned: false,
+    snoozedUntil: null,
+    unread: true,
+  },
+  {
+    id: 'e3',
+    senderName: 'Ratliffs Mobile RV',
+    senderEmail: 'billing@ratliffsmobilerv.com',
+    subject: 'New payment request from Ratliffs Mobile RV - invoice 1166',
+    snippet: 'Your invoice is ready! BALANCE DUE $900.00 View and pay Dear Grayson Murdock, Thank you for choosing...',
+    body: 'Dear Grayson Murdock,\n\nYour invoice #1166 is ready for review.\nBalance Due: $900.00\n\nThank you for your business!',
+    timeLabel: '9:15 AM',
+    bucket: 'Today',
+    status: 'inbox',
+    pinned: false,
+    snoozedUntil: null,
+    unread: true,
+  },
+  {
+    id: 'e4',
+    senderName: 'eForms Notifications',
+    senderEmail: 'eforms.notifications@atf.gov',
+    subject: 'eForms Application Submission Notification for Permit/Control No: 2027147105',
+    snippet: 'This is to advise you that the status of your eForms submission with the subject Permit/Control n...',
+    body: 'This is to advise you that the status of your eForms Form 1 submission (Control No: 2027147105) has been updated to SUBMITTED/IN PROCESS.',
+    timeLabel: '8:40 AM',
+    bucket: 'Today',
+    status: 'inbox',
+    pinned: false,
+    snoozedUntil: null,
+    unread: true,
+  },
+  {
+    id: 'e5',
+    senderName: 'Dylan, me',
+    senderEmail: 'dylan@autobodyfortworth.com',
+    subject: 'Vehicle arrival and status.',
+    snippet: 'It was a junkyard replacement and you guys made me a deal on labor because of circumstances of it failing at 102k...',
+    body: 'Hey Grayson,\n\nThe replacement assembly arrived on the morning freight truck. We will get it on the lift this afternoon and send photos.',
+    timeLabel: 'Yesterday',
+    bucket: 'Yesterday',
+    status: 'inbox',
+    pinned: false,
+    snoozedUntil: null,
+    unread: false,
+  },
+  {
+    id: 'e6',
+    senderName: 'Kickstarter',
+    senderEmail: 'no-reply@kickstarter.com',
+    subject: 'Project Update #11: Machina MagIC Snowboard Ride System by Brendan Walker',
+    snippet: 'One More Sizing Opportunity - Hey Machina Crew! Thanks again for the support and understanding...',
+    body: 'Hey Machina Crew!\n\nThanks again for the support and understanding as we finalize production sizing before our Utah & Colorado winter shipments.',
+    timeLabel: 'Yesterday',
+    bucket: 'Yesterday',
+    status: 'inbox',
+    pinned: false,
+    snoozedUntil: null,
+    unread: true,
+  },
+  {
+    id: 'e7',
+    senderName: 'Customer Support',
+    senderEmail: 'support@equipmentrma.com',
+    subject: 'Blowers RMA Created R1-SO21168408',
+    snippet: 'RMA Request Dear Grayson Murdock, Your repair request has been submitted successfully. RMA Details Sr.#...',
+    body: 'Dear Grayson Murdock,\n\nYour repair RMA #R1-SO21168408 has been created. Use the attached prepaid shipping label to return the unit.',
+    timeLabel: 'Nov 12',
+    bucket: 'Earlier this month',
+    status: 'inbox',
+    pinned: false,
+    snoozedUntil: null,
+    unread: false,
+  },
+  {
+    id: 'e8',
+    senderName: 'MARS Towing & Recovery',
+    senderEmail: 'receipts@squareup.com',
+    subject: 'Receipt from MARS Towing & Recovery #Fqwo',
+    snippet: 'Receipt for $232.88 at MARS Towing & Recovery. Square automatically sends receipts to the email ad...',
+    body: 'MARS Towing & Recovery\nTotal Paid: $232.88\nCard ending in 4019\nThank you!',
+    timeLabel: 'Nov 10',
+    bucket: 'Earlier this month',
+    status: 'inbox',
+    pinned: false,
+    snoozedUntil: null,
+    unread: false,
+  },
+  {
+    id: 'e9',
+    senderName: 'OMRE',
+    senderEmail: 'hello@omre.co',
+    subject: 'Up To 30% Off Starts Now! - Your healthiest Black Friday yet',
+    snippet: 'Can’t see this email? View in your browser. Black Friday Early Access starts today...',
+    body: 'Save up to 30% sitewide during our Black Friday Early Access event. Click here to unsubscribe.',
+    timeLabel: 'Nov 14',
+    bucket: 'Earlier this month',
+    status: 'inbox',
+    pinned: false,
+    snoozedUntil: null,
+    unread: true,
+  },
+];
+
+function classifyEmail(email, rules) {
+  if (email.manualBundle && BUNDLE_META[email.manualBundle]) {
+    return email.manualBundle;
+  }
+  const senderStr = `${email.senderName} ${email.senderEmail}`.toLowerCase();
+  const subjectStr = (email.subject || '').toLowerCase();
+  const anyStr = `${senderStr} ${subjectStr} ${(email.snippet || '').toLowerCase()}`;
+
+  for (const rule of rules) {
+    if (!rule.pattern?.trim()) continue;
+    const tokens = rule.pattern
+      .toLowerCase()
+      .split('|')
+      .map((t) => t.trim())
+      .filter(Boolean);
+
+    const target =
+      rule.field === 'sender'
+        ? senderStr
+        : rule.field === 'subject'
+        ? subjectStr
+        : anyStr;
+
+    if (tokens.some((tok) => target.includes(tok))) {
+      return rule.bundle;
+    }
+  }
+  return 'Primary';
+}
+
+function parseEmlContent(rawText, fileName) {
+  const lines = rawText.split(/\r?\n/);
+  let subject = fileName.replace(/\.eml$/i, '');
+  let from = 'Imported Sender <imported@example.com>';
+  let bodyStartIdx = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === '') {
+      bodyStartIdx = i + 1;
+      break;
+    }
+    if (/^Subject:/i.test(line)) subject = line.replace(/^Subject:\s*/i, '').trim();
+    if (/^From:/i.test(line)) from = line.replace(/^From:\s*/i, '').trim();
+  }
+
+  const emailMatch = from.match(/<([^>]+)>/);
+  const senderEmail = emailMatch ? emailMatch[1] : from;
+  const senderName = emailMatch ? from.replace(/<[^>]+>/, '').replace(/"/g, '').trim() || senderEmail : from;
+  const body = lines
+    .slice(bodyStartIdx)
+    .join('\n')
+    .replace(/<[^>]*>?/gm, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return {
+    id: `eml-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    senderName,
+    senderEmail,
+    subject,
+    snippet: body.slice(0, 140) || '(No preview text)',
+    body: body || '(Empty message body)',
+    timeLabel: 'Just now',
+    bucket: 'Today',
+    status: 'inbox',
+    pinned: false,
+    snoozedUntil: null,
+    unread: true,
+  };
+}
+
+export default function App() {
+  const [emails, setEmails] = useState(() => {
+    try {
+      const saved = localStorage.getItem('classic_inbox_emails_v1');
+      return saved ? JSON.parse(saved) : INITIAL_EMAILS;
+    } catch {
+      return INITIAL_EMAILS;
+    }
+  });
+
+  const [rules, setRules] = useState(() => {
+    try {
+      const saved = localStorage.getItem('classic_inbox_rules_v1');
+      return saved ? JSON.parse(saved) : DEFAULT_RULES;
+    } catch {
+      return DEFAULT_RULES;
+    }
+  });
+
+  const [activeNav, setActiveNav] = useState('inbox');
+  const [sidebarOpen, setSidebarOpen] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 768 : true
+  );
+  const [pinnedOnly, setPinnedOnly] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [expandedBundles, setExpandedBundles] = useState({});
+  const [openEmailId, setOpenEmailId] = useState(null);
+  const [snoozePickerId, setSnoozePickerId] = useState(null);
+  const [ruleModalOpen, setRuleModalOpen] = useState(false);
+  const [connectModalOpen, setConnectModalOpen] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  const [newRule, setNewRule] = useState({ name: '', field: 'sender', pattern: '', bundle: 'Updates' });
+  const [googleClientId, setGoogleClientId] = useState(() => localStorage.getItem('classic_inbox_client_id') || '');
+  const [gmailConnected, setGmailConnected] = useState(false);
+  const [composeForm, setComposeForm] = useState({ to: '', subject: '', body: '' });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('classic_inbox_emails_v1', JSON.stringify(emails));
+    } catch {}
+  }, [emails]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('classic_inbox_rules_v1', JSON.stringify(rules));
+    } catch {}
+  }, [rules]);
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3200);
+  };
+
+  const classifiedEmails = useMemo(() => {
+    return emails.map((e) => ({
+      ...e,
+      bundle: classifyEmail(e, rules),
+    }));
+  }, [emails, rules]);
+
+  const visibleEmails = useMemo(() => {
+    return classifiedEmails.filter((e) => {
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const hay = `${e.senderName} ${e.senderEmail} ${e.subject} ${e.snippet}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (activeNav === 'inbox') {
+        if (e.status !== 'inbox') return false;
+        if (pinnedOnly && !e.pinned) return false;
+        return true;
+      }
+      if (activeNav === 'snoozed') return e.status === 'snoozed';
+      if (activeNav === 'done') return e.status === 'done';
+      if (activeNav.startsWith('bundle:')) {
+        const bName = activeNav.replace('bundle:', '');
+        return e.status !== 'done' && e.bundle === bName;
+      }
+      return true;
+    });
+  }, [classifiedEmails, activeNav, pinnedOnly, searchQuery]);
+
+  const togglePin = (id, ev) => {
+    ev?.stopPropagation();
+    setEmails((prev) =>
+      prev.map((e) =>
+        e.id === id ? { ...e, pinned: !e.pinned, status: e.status === 'done' ? 'inbox' : e.status } : e
+      )
+    );
+  };
+
+  const markDone = (id, ev) => {
+    ev?.stopPropagation();
+    setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, status: 'done', pinned: false } : e)));
+    if (openEmailId === id) setOpenEmailId(null);
+    showToast('Marked Done');
+  };
+
+  const moveBackToInbox = (id, ev) => {
+    ev?.stopPropagation();
+    setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, status: 'inbox', snoozedUntil: null } : e)));
+    showToast('Moved back to Inbox');
+  };
+
+  const snoozeEmail = (id, label, ev) => {
+    ev?.stopPropagation();
+    setEmails((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, status: 'snoozed', pinned: false, snoozedUntil: label } : e))
+    );
+    setSnoozePickerId(null);
+    if (openEmailId === id) setOpenEmailId(null);
+    showToast(`Snoozed until ${label}`);
+  };
+
+  const sweepBundle = (bucket, bundleName, ev) => {
+    ev?.stopPropagation();
+    setEmails((prev) =>
+      prev.map((e) => {
+        const b = classifyEmail(e, rules);
+        if (e.status === 'inbox' && e.bucket === bucket && b === bundleName && !e.pinned) {
+          return { ...e, status: 'done' };
+        }
+        return e;
+      })
+    );
+    showToast(`Swept ${bundleName} in ${bucket}`);
+  };
+
+  const sweepBucket = (bucket) => {
+    setEmails((prev) =>
+      prev.map((e) => (e.status === 'inbox' && e.bucket === bucket && !e.pinned ? { ...e, status: 'done' } : e))
+    );
+    showToast(`Swept unpinned items in ${bucket}`);
+  };
+
+  const assignSenderRule = (email, targetBundle) => {
+    const cleanPattern = email.senderEmail.toLowerCase();
+    const ruleId = `r-${Date.now()}`;
+    setRules((prev) => [
+      {
+        id: ruleId,
+        name: `${email.senderName} -> ${targetBundle}`,
+        field: 'sender',
+        pattern: cleanPattern,
+        bundle: targetBundle,
+      },
+      ...prev,
+    ]);
+    setEmails((prev) => prev.map((e) => (e.id === email.id ? { ...e, manualBundle: targetBundle } : e)));
+    showToast(`Future messages from ${email.senderName} -> ${targetBundle}`);
+  };
+
+  const handleEmlFiles = async (fileList) => {
+    const imported = [];
+    for (const file of Array.from(fileList)) {
+      if (!file.name.toLowerCase().endsWith('.eml')) continue;
+      const text = await file.text();
+      imported.push(parseEmlContent(text, file.name));
+    }
+    if (imported.length > 0) {
+      setEmails((prev) => [...imported, ...prev]);
+      setConnectModalOpen(false);
+      showToast(`Imported ${imported.length} email(s)`);
+    }
+  };
+
+  const connectGoogleOAuth = () => {
+    if (!googleClientId.trim()) {
+      showToast('Enter your Google OAuth Client ID first');
+      return;
+    }
+    localStorage.setItem('classic_inbox_client_id', googleClientId.trim());
+    const scriptId = 'google-gis-script';
+    const initTokenClient = () => {
+      if (!window.google?.accounts?.oauth2) {
+        showToast('Google Identity script still loading—try again in 1 second');
+        return;
+      }
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: googleClientId.trim(),
+        scope: 'https://www.googleapis.com/auth/gmail.modify',
+        callback: async (tokenResponse) => {
+          if (tokenResponse?.access_token) {
+            setGmailConnected(true);
+            setConnectModalOpen(false);
+            showToast('Connected to Gmail! Fetching recent threads...');
+            try {
+              const listRes = await fetch(
+                'https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=15&q=in:inbox',
+                { headers: { Authorization: `Bearer ${tokenResponse.access_token}` } }
+              );
+              const listData = await listRes.json();
+              if (listData.messages) {
+                const fetched = await Promise.all(
+                  listData.messages.map(async (m) => {
+                    const msgRes = await fetch(
+                      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`,
+                      { headers: { Authorization: `Bearer ${tokenResponse.access_token}` } }
+                    );
+                    const msgData = await msgRes.json();
+                    const headers = msgData.payload?.headers || [];
+                    const from = headers.find((h) => h.name === 'From')?.value || 'Gmail Sender';
+                    const subject = headers.find((h) => h.name === 'Subject')?.value || '(No Subject)';
+                    const emailMatch = from.match(/<([^>]+)>/);
+                    return {
+                      id: `gmail-${m.id}`,
+                      senderName: emailMatch ? from.replace(/<[^>]+>/, '').replace(/"/g, '').trim() : from,
+                      senderEmail: emailMatch ? emailMatch[1] : from,
+                      subject,
+                      snippet: msgData.snippet || '',
+                      body: msgData.snippet || '',
+                      timeLabel: 'Today',
+                      bucket: 'Today',
+                      status: 'inbox',
+                      pinned: false,
+                      snoozedUntil: null,
+                      unread: (msgData.labelIds || []).includes('UNREAD'),
+                    };
+                  })
+                );
+                setEmails(fetched);
+                showToast(`Loaded ${fetched.length} live Gmail threads`);
+              }
+            } catch {
+              showToast('Connected, but could not fetch messages');
+            }
+          }
+        },
+      });
+      client.requestAccessToken();
+    };
+
+    if (!document.getElementById(scriptId)) {
+      const s = document.createElement('script');
+      s.id = scriptId;
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.async = true;
+      s.onload = initTokenClient;
+      document.body.appendChild(s);
+    } else {
+      initTokenClient();
+    }
+  };
+
+  const simulateWakeSnoozed = () => {
+    setEmails((prev) =>
+      prev.map((e) =>
+        e.status === 'snoozed' ? { ...e, status: 'inbox', bucket: 'Today', timeLabel: 'Snoozed -> Now', snoozedUntil: null } : e
+      )
+    );
+    setActiveNav('inbox');
+    showToast('Snoozed items returned to Today');
+  };
+
+  const resetDemoData = () => {
+    setEmails(INITIAL_EMAILS);
+    setRules(DEFAULT_RULES);
+    showToast('Sample data & rules reset');
+  };
+
+  const openEmail = classifiedEmails.find((e) => e.id === openEmailId);
+  const headerColor =
+    activeNav === 'done'
+      ? 'bg-[#0F9D58]'
+      : activeNav === 'snoozed'
+      ? 'bg-[#EF6C00]'
+      : 'bg-[#4285F4]';
+
+  const renderEmailRow = (email, nested = false) => {
+    const meta = BUNDLE_META[email.bundle] || BUNDLE_META.Primary;
+    return (
+      <div
+        key={email.id}
+        onClick={() => {
+          setOpenEmailId(email.id);
+          setEmails((prev) => prev.map((item) => (item.id === email.id ? { ...item, unread: false } : item)));
+        }}
+        className={`group relative flex items-center gap-3 px-4 py-3 bg-white hover:bg-gray-50 cursor-pointer border-b border-gray-100 transition-colors ${
+          nested ? 'pl-8 bg-slate-50/40' : ''
+        }`}
+      >
+        <div
+          className="w-9 h-9 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0"
+          style={{ backgroundColor: meta.color }}
+        >
+          {(email.senderName || '?')[0].toUpperCase()}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <span className={`text-sm truncate ${email.unread ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`}>
+              {email.senderName}
+            </span>
+            <span className="text-xs text-gray-400 shrink-0 group-hover:hidden">{email.timeLabel}</span>
+          </div>
+          <div className="text-sm text-gray-800 truncate">
+            <span className={email.unread ? 'font-semibold' : ''}>{email.subject}</span>
+            <span className="text-gray-400"> — {email.snippet}</span>
+          </div>
+        </div>
+
+        {/* Quick triage actions */}
+        <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
+          <button
+            title="Pin to Inbox"
+            onClick={(ev) => togglePin(email.id, ev)}
+            className={`p-2 rounded-full hover:bg-gray-200 ${email.pinned ? 'text-blue-600 opacity-100' : 'text-gray-500'}`}
+          >
+            <Pin className="w-4 h-4" />
+          </button>
+
+          <div className="relative">
+            <button
+              title="Snooze"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                setSnoozePickerId(snoozePickerId === email.id ? null : email.id);
+              }}
+              className="p-2 rounded-full hover:bg-gray-200 text-gray-500"
+            >
+              <Clock className="w-4 h-4" />
+            </button>
+            {snoozePickerId === email.id && (
+              <div
+                onClick={(ev) => ev.stopPropagation()}
+                className="absolute right-0 top-9 z-30 w-44 bg-white rounded-lg shadow-xl border border-gray-200 py-1 text-sm"
+              >
+                {['Later today (6 PM)', 'Tomorrow (8 AM)', 'Next week (Mon)'].map((slot) => (
+                  <button
+                    key={slot}
+                    onClick={(ev) => snoozeEmail(email.id, slot, ev)}
+                    className="w-full text-left px-3 py-2 hover:bg-amber-50 text-gray-700"
+                  >
+                    {slot}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {email.status === 'done' ? (
+            <button
+              title="Move back to Inbox"
+              onClick={(ev) => moveBackToInbox(email.id, ev)}
+              className="p-2 rounded-full hover:bg-blue-100 text-blue-600"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          ) : (
+            <button
+              title="Mark Done"
+              onClick={(ev) => markDone(email.id, ev)}
+              className="p-2 rounded-full hover:bg-emerald-100 text-emerald-600"
+            >
+              <Check className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const buckets = ['Today', 'Yesterday', 'Earlier this month'];
+
+  return (
+    <div
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        if (e.dataTransfer?.files?.length) handleEmlFiles(e.dataTransfer.files);
+      }}
+      className="h-full flex flex-col bg-[#f2f2f2] overflow-hidden"
+      style={{ paddingTop: 'env(safe-area-inset-top)' }}
+    >
+      {/* Top App Bar */}
+      <header className={`${headerColor} text-white shadow-md px-3 sm:px-5 h-14 flex items-center justify-between gap-3 shrink-0 transition-colors`}>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setSidebarOpen((v) => !v)}
+            className="p-2 rounded-full hover:bg-white/15 transition-colors"
+            aria-label="Toggle Menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <span className="font-semibold text-lg tracking-tight">
+            {activeNav === 'inbox'
+              ? 'Inbox'
+              : activeNav === 'snoozed'
+              ? 'Snoozed'
+              : activeNav === 'done'
+              ? 'Done'
+              : activeNav.replace('bundle:', '')}
+          </span>
+        </div>
+
+        {/* Search */}
+        <div className="flex-1 max-w-xl">
+          <div className="relative flex items-center bg-white/20 focus-within:bg-white focus-within:text-gray-900 rounded-md px-3 py-1.5 transition-colors">
+            <Search className="w-4 h-4 mr-2 opacity-80 shrink-0" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search mail & bundles..."
+              className="w-full bg-transparent text-sm placeholder-white/80 focus:placeholder-gray-400 focus:outline-none"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="ml-1">
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Pinned Toggle & Connect */}
+        <div className="flex items-center gap-2 shrink-0">
+          {activeNav === 'inbox' && (
+            <button
+              onClick={() => setPinnedOnly((p) => !p)}
+              title="Show Pinned Only"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                pinnedOnly ? 'bg-white text-blue-600 shadow' : 'bg-white/15 text-white hover:bg-white/25'
+              }`}
+            >
+              <Pin className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Pinned</span>
+            </button>
+          )}
+          <button
+            onClick={() => setConnectModalOpen(true)}
+            className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-full text-xs font-medium transition-colors"
+          >
+            <KeyRound className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">{gmailConnected ? 'Gmail Live' : 'Connect / .EML'}</span>
+          </button>
+        </div>
+      </header>
+
+      {/* Main Body */}
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Navigation Drawer */}
+        {sidebarOpen && (
+          <aside className="w-60 bg-white border-r border-gray-200 flex flex-col justify-between py-3 shrink-0 z-20 absolute md:static inset-y-0 left-0 shadow-lg md:shadow-none">
+            <div className="overflow-y-auto px-2 space-y-1">
+              {[
+                { id: 'inbox', label: 'Inbox', icon: InboxIcon, color: 'text-blue-600' },
+                { id: 'snoozed', label: 'Snoozed', icon: Clock, color: 'text-amber-600' },
+                { id: 'done', label: 'Done', icon: CheckCheck, color: 'text-emerald-600' },
+              ].map((item) => {
+                const Icon = item.icon;
+                const active = activeNav === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveNav(item.id);
+                      setOpenEmailId(null);
+                      if (window.innerWidth < 768) setSidebarOpen(false);
+                    }}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                      active ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 ${item.color}`} />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+
+              <div className="pt-3 pb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                Bundles
+              </div>
+              {Object.values(BUNDLE_META)
+                .filter((b) => b.id !== 'Primary')
+                .map((b) => {
+                  const Icon = b.icon;
+                  const active = activeNav === `bundle:${b.id}`;
+                  return (
+                    <button
+                      key={b.id}
+                      onClick={() => {
+                        setActiveNav(`bundle:${b.id}`);
+                        setOpenEmailId(null);
+                        if (window.innerWidth < 768) setSidebarOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                        active ? 'bg-gray-100 font-semibold text-gray-900' : 'text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" style={{ color: b.color }} />
+                      <span>{b.label}</span>
+                    </button>
+                  );
+                })}
+            </div>
+
+            <div className="px-2 pt-2 border-t border-gray-100 space-y-1">
+              <button
+                onClick={() => setRuleModalOpen(true)}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-100 font-medium"
+              >
+                <Settings className="w-4 h-4 text-gray-500" />
+                <span>Edit Routing Rules</span>
+              </button>
+              <button
+                onClick={resetDemoData}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset Demo Data</span>
+              </button>
+            </div>
+          </aside>
+        )}
+
+        {/* Main Content Stream */}
+        <main className="flex-1 overflow-y-auto px-2 sm:px-6 py-4">
+          <div className="max-w-4xl mx-auto pb-20">
+            {openEmail ? (
+              /* Reading Pane */
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2 bg-gray-50">
+                  <button
+                    onClick={() => setOpenEmailId(null)}
+                    className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-900"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>Back</span>
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={openEmail.bundle}
+                      onChange={(e) => assignSenderRule(openEmail, e.target.value)}
+                      className="text-xs border border-gray-300 rounded px-2 py-1 bg-white text-gray-700"
+                      title="Always route this sender to bundle"
+                    >
+                      {Object.keys(BUNDLE_META).map((bKey) => (
+                        <option key={bKey} value={bKey}>
+                          Bundle: {bKey}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={(ev) => togglePin(openEmail.id, ev)}
+                      className={`p-2 rounded-full hover:bg-gray-200 ${openEmail.pinned ? 'text-blue-600' : 'text-gray-500'}`}
+                    >
+                      <Pin className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={(ev) => markDone(openEmail.id, ev)}
+                      className="p-2 rounded-full hover:bg-emerald-100 text-emerald-600"
+                    >
+                      <Check className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                <div className="p-5 sm:p-6">
+                  <h2 className="text-xl font-semibold text-gray-900 mb-3">{openEmail.subject}</h2>
+                  <div className="flex items-center justify-between text-sm text-gray-500 pb-4 mb-4 border-b border-gray-100">
+                    <div>
+                      <span className="font-semibold text-gray-800">{openEmail.senderName}</span>{' '}
+                      <span className="text-xs">&lt;{openEmail.senderEmail}&gt;</span>
+                    </div>
+                    <span className="text-xs">{openEmail.timeLabel}</span>
+                  </div>
+                  <div className="text-sm text-gray-800 whitespace-pre-line leading-relaxed">{openEmail.body}</div>
+                </div>
+              </div>
+            ) : activeNav === 'inbox' ? (
+              /* Grouped Chronological Timeline with Inline Bundles */
+              buckets.map((bucket) => {
+                const bucketItems = visibleEmails.filter((e) => e.bucket === bucket);
+                if (bucketItems.length === 0) return null;
+
+                const directItems = bucketItems.filter((e) => !BUNDLE_META[e.bundle]?.inlineBundle);
+                const bundledGroups = {};
+                bucketItems
+                  .filter((e) => BUNDLE_META[e.bundle]?.inlineBundle)
+                  .forEach((e) => {
+                    if (!bundledGroups[e.bundle]) bundledGroups[e.bundle] = [];
+                    bundledGroups[e.bundle].push(e);
+                  });
+
+                return (
+                  <section key={bucket} className="mb-6">
+                    <div className="flex items-center justify-between px-1 mb-2">
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">{bucket}</h3>
+                      <button
+                        onClick={() => sweepBucket(bucket)}
+                        className="text-xs text-gray-400 hover:text-emerald-600 flex items-center gap-1 transition-colors"
+                      >
+                        <CheckCheck className="w-3.5 h-3.5" />
+                        <span>Sweep unpinned</span>
+                      </button>
+                    </div>
+
+                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                      {/* Direct Primary / Pinned Conversations */}
+                      {directItems.map((email) => renderEmailRow(email, false))}
+
+                      {/* Inline Collapsible Bundle Cards */}
+                      {Object.entries(bundledGroups).map(([bundleName, items]) => {
+                        const meta = BUNDLE_META[bundleName];
+                        const Icon = meta.icon;
+                        const expandKey = `${bucket}-${bundleName}`;
+                        const isExpanded = !!expandedBundles[expandKey];
+
+                        return (
+                          <div key={expandKey} className="border-b border-gray-100 last:border-b-0">
+                            <div
+                              onClick={() =>
+                                setExpandedBundles((prev) => ({ ...prev, [expandKey]: !prev[expandKey] }))
+                              }
+                              className="group flex items-center gap-3 px-4 py-3 bg-white hover:bg-gray-50 cursor-pointer transition-colors"
+                            >
+                              <div
+                                className="w-9 h-9 rounded-full flex items-center justify-center text-white shrink-0"
+                                style={{ backgroundColor: meta.color }}
+                              >
+                                <Icon className="w-4 h-4" />
+                              </div>
+
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-sm" style={{ color: meta.color }}>
+                                    {meta.label} ({items.length})
+                                  </span>
+                                  {isExpanded ? (
+                                    <ChevronDown className="w-4 h-4 text-gray-400" />
+                                  ) : (
+                                    <ChevronRight className="w-4 h-4 text-gray-400" />
+                                  )}
+                                </div>
+                                <div className="text-xs text-gray-500 truncate">
+                                  {items.map((i) => i.senderName.split(',')[0]).join(', ')}
+                                </div>
+                              </div>
+
+                              <button
+                                title={`Sweep ${meta.label}`}
+                                onClick={(ev) => sweepBundle(bucket, bundleName, ev)}
+                                className="p-2 rounded-full hover:bg-emerald-100 text-emerald-600 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                              >
+                                <CheckCheck className="w-4 h-4" />
+                              </button>
+                            </div>
+
+                            {isExpanded && (
+                              <div className="border-t border-gray-100">
+                                {items.map((item) => renderEmailRow(item, true))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                );
+              })
+            ) : (
+              /* Flat View for Snoozed, Done, or Single Bundle */
+              <div>
+                {activeNav === 'snoozed' && visibleEmails.length > 0 && (
+                  <div className="mb-3 flex justify-end">
+                    <button
+                      onClick={simulateWakeSnoozed}
+                      className="text-xs bg-amber-600 text-white px-3 py-1.5 rounded-full shadow-sm hover:bg-amber-700"
+                    >
+                      Simulate Time Passing (Wake Snoozed)
+                    </button>
+                  </div>
+                )}
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                  {visibleEmails.length === 0 ? (
+                    <div className="p-12 text-center text-gray-400 text-sm">
+                      All clear! Nothing here right now.
+                    </div>
+                  ) : (
+                    visibleEmails.map((email) => renderEmailRow(email, false))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
+
+      {/* Red Floating Compose Button */}
+      <button
+        onClick={() => setComposeOpen(true)}
+        className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-[#DB4437] hover:bg-[#c53929] text-white shadow-lg flex items-center justify-center transition-transform hover:scale-105 z-30"
+        style={{ marginBottom: 'env(safe-area-inset-bottom)' }}
+        title="Compose"
+      >
+        <Plus className="w-6 h-6" />
+      </button>
+
+      {/* Routing Rules Modal */}
+      {ruleModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-lg w-full shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Deterministic Routing Rules (First Match Wins)</h3>
+              <button onClick={() => setRuleModalOpen(false)}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+              <p className="text-xs text-gray-500">
+                Rules run from top to bottom. As soon as an email matches one rule, it stops—preventing duplicates across sections.
+              </p>
+
+              {/* Add Rule Form */}
+              <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={newRule.field}
+                    onChange={(e) => setNewRule({ ...newRule, field: e.target.value })}
+                    className="text-xs border border-gray-300 rounded px-2 py-1.5 bg-white"
+                  >
+                    <option value="sender">Sender contains</option>
+                    <option value="subject">Subject contains</option>
+                    <option value="any">Any text contains</option>
+                  </select>
+                  <select
+                    value={newRule.bundle}
+                    onChange={(e) => setNewRule({ ...newRule, bundle: e.target.value })}
+                    className="text-xs border border-gray-300 rounded px-2 py-1.5 bg-white"
+                  >
+                    {Object.keys(BUNDLE_META).map((b) => (
+                      <option key={b} value={b}>
+                        Route to: {b}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Keywords separated by | (e.g. receipt|invoice)"
+                    value={newRule.pattern}
+                    onChange={(e) => setNewRule({ ...newRule, pattern: e.target.value })}
+                    className="flex-1 text-xs border border-gray-300 rounded px-2.5 py-1.5"
+                  />
+                  <button
+                    onClick={() => {
+                      if (!newRule.pattern.trim()) return;
+                      setRules((prev) => [
+                        {
+                          id: `r-${Date.now()}`,
+                          name: `${newRule.pattern} -> ${newRule.bundle}`,
+                          field: newRule.field,
+                          pattern: newRule.pattern.trim(),
+                          bundle: newRule.bundle,
+                        },
+                        ...prev,
+                      ]);
+                      setNewRule({ name: '', field: 'sender', pattern: '', bundle: 'Updates' });
+                    }}
+                    className="bg-blue-600 text-white text-xs font-medium px-3 py-1.5 rounded hover:bg-blue-700"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              {/* Active Rule List */}
+              <div className="space-y-2">
+                {rules.map((r, idx) => (
+                  <div key={r.id} className="flex items-center justify-between p-2.5 border border-gray-200 rounded-lg text-xs">
+                    <div>
+                      <span className="font-bold text-gray-400 mr-2">#{idx + 1}</span>
+                      <span className="font-semibold text-gray-800">{r.bundle}</span>
+                      <span className="text-gray-500 ml-2">
+                        ({r.field}: <code className="bg-gray-100 px-1 rounded">{r.pattern}</code>)
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setRules((prev) => prev.filter((item) => item.id !== r.id))}
+                      className="text-gray-400 hover:text-red-500 p-1"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Connect Gmail / Import .EML Modal */}
+      {connectModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-md w-full shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Import .EML or Connect Live Gmail</h3>
+              <button onClick={() => setConnectModalOpen(false)}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-5 space-y-5">
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">
+                  Option 1: Upload .EML Files
+                </h4>
+                <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-4 cursor-pointer hover:border-blue-500 hover:bg-blue-50/40 transition-colors">
+                  <Upload className="w-6 h-6 text-blue-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-700">Click to select .eml files (or drag anywhere)</span>
+                  <input
+                    type="file"
+                    accept=".eml"
+                    multiple
+                    onChange={(e) => e.target.files && handleEmlFiles(e.target.files)}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              <div className="border-t border-gray-100 pt-4">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">
+                  Option 2: Live Gmail API (Google OAuth)
+                </h4>
+                <input
+                  type="text"
+                  value={googleClientId}
+                  onChange={(e) => setGoogleClientId(e.target.value)}
+                  placeholder="Paste Google Cloud OAuth Client ID..."
+                  className="w-full text-xs border border-gray-300 rounded-lg px-3 py-2 mb-2"
+                />
+                <button
+                  onClick={connectGoogleOAuth}
+                  className="w-full bg-[#4285F4] hover:bg-blue-600 text-white text-xs font-semibold py-2.5 rounded-lg transition-colors"
+                >
+                  Sign in with Google & Sync Inbox
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Compose Modal */}
+      {composeOpen && (
+        <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-md w-full shadow-2xl overflow-hidden">
+            <div className="px-4 py-3 bg-gray-800 text-white flex items-center justify-between">
+              <span className="text-sm font-medium">New Message</span>
+              <button onClick={() => setComposeOpen(false)}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <input
+                type="email"
+                placeholder="To"
+                value={composeForm.to}
+                onChange={(e) => setComposeForm({ ...composeForm, to: e.target.value })}
+                className="w-full text-sm border-b border-gray-200 pb-2 focus:outline-none"
+              />
+              <input
+                type="text"
+                placeholder="Subject"
+                value={composeForm.subject}
+                onChange={(e) => setComposeForm({ ...composeForm, subject: e.target.value })}
+                className="w-full text-sm border-b border-gray-200 pb-2 focus:outline-none"
+              />
+              <textarea
+                rows={5}
+                placeholder="Write your message..."
+                value={composeForm.body}
+                onChange={(e) => setComposeForm({ ...composeForm, body: e.target.value })}
+                className="w-full text-sm focus:outline-none resize-none"
+              />
+              <div className="flex justify-end">
+                <button
+                  onClick={() => {
+                    setComposeOpen(false);
+                    setComposeForm({ to: '', subject: '', body: '' });
+                    showToast('Message queued');
+                  }}
+                  className="flex items-center gap-1.5 bg-[#4285F4] text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-blue-600"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Send</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-4 py-2.5 rounded-full shadow-lg z-50">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
