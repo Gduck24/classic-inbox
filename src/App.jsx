@@ -28,7 +28,6 @@ import {
   Reply,
   Forward,
   RefreshCw,
-  GripVertical,
   Moon,
   Sun,
   AlignJustify,
@@ -38,8 +37,6 @@ import {
   Calendar as CalendarIcon,
   ListTodo,
   ExternalLink,
-  PanelRightClose,
-  PanelRightOpen,
   ArrowUp,
   ArrowDown,
   Tag,
@@ -132,7 +129,7 @@ function classifyEmail(email, rules, bundleMap) {
 export default function App() {
   const [bundles, setBundles] = useState(() => {
     try {
-      const saved = localStorage.getItem('classic_inbox_bundles_v3');
+      const saved = localStorage.getItem('classic_inbox_bundles_v4');
       return saved ? JSON.parse(saved) : DEFAULT_BUNDLES;
     } catch {
       return DEFAULT_BUNDLES;
@@ -141,7 +138,7 @@ export default function App() {
 
   const [emails, setEmails] = useState(() => {
     try {
-      const saved = localStorage.getItem('classic_inbox_emails_v3');
+      const saved = localStorage.getItem('classic_inbox_emails_v4');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -150,37 +147,29 @@ export default function App() {
 
   const [rules, setRules] = useState(() => {
     try {
-      const saved = localStorage.getItem('classic_inbox_rules_v3');
+      const saved = localStorage.getItem('classic_inbox_rules_v4');
       return saved ? JSON.parse(saved) : DEFAULT_RULES;
     } catch {
       return DEFAULT_RULES;
     }
   });
 
-  const [tasks, setTasks] = useState(() => {
-    try {
-      const saved = localStorage.getItem('classic_inbox_tasks_v3');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
+  const [tasks, setTasks] = useState([]);
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [calendarError, setCalendarError] = useState(false);
 
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('classic_inbox_dark') === 'true');
   const [compactMode, setCompactMode] = useState(() => localStorage.getItem('classic_inbox_compact') === 'true');
 
-  const [activeNav, setActiveNav] = useState('inbox'); // 'inbox' | 'pinned' | 'snoozed' | 'done' | 'bundle:id'
+  const [activeNav, setActiveNav] = useState('inbox');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [rightPanelOpen, setRightPanelOpen] = useState(true);
-  const [rightTab, setRightTab] = useState('all');
+  
+  // Gmail-style right side panel state: null | 'calendar' | 'tasks'
+  const [activeRightPanel, setActiveRightPanel] = useState('tasks');
 
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedBundles, setExpandedBundles] = useState({});
   const [openEmailId, setOpenEmailId] = useState(null);
-  const [snoozePickerId, setSnoozePickerId] = useState(null);
 
   const [ruleModalOpen, setRuleModalOpen] = useState(false);
   const [connectModalOpen, setConnectModalOpen] = useState(false);
@@ -200,10 +189,9 @@ export default function App() {
 
   const [composeForm, setComposeForm] = useState({ mode: 'new', to: '', subject: '', body: '', threadId: null, inReplyTo: null });
 
-  useEffect(() => { localStorage.setItem('classic_inbox_bundles_v3', JSON.stringify(bundles)); }, [bundles]);
-  useEffect(() => { localStorage.setItem('classic_inbox_emails_v3', JSON.stringify(emails)); }, [emails]);
-  useEffect(() => { localStorage.setItem('classic_inbox_rules_v3', JSON.stringify(rules)); }, [rules]);
-  useEffect(() => { localStorage.setItem('classic_inbox_tasks_v3', JSON.stringify(tasks)); }, [tasks]);
+  useEffect(() => { localStorage.setItem('classic_inbox_bundles_v4', JSON.stringify(bundles)); }, [bundles]);
+  useEffect(() => { localStorage.setItem('classic_inbox_emails_v4', JSON.stringify(emails)); }, [emails]);
+  useEffect(() => { localStorage.setItem('classic_inbox_rules_v4', JSON.stringify(rules)); }, [rules]);
   useEffect(() => { localStorage.setItem('classic_inbox_dark', String(darkMode)); }, [darkMode]);
   useEffect(() => { localStorage.setItem('classic_inbox_compact', String(compactMode)); }, [compactMode]);
 
@@ -223,7 +211,7 @@ export default function App() {
     try {
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
-      const endOfRange = new Date(startOfDay.getTime() + 7 * 86400000);
+      const endOfRange = new Date(startOfDay.getTime() + 14 * 86400000);
       const url = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
       url.searchParams.set('timeMin', startOfDay.toISOString());
       url.searchParams.set('timeMax', endOfRange.toISOString());
@@ -257,7 +245,8 @@ export default function App() {
 
   const addGoogleTask = async (text) => {
     if (!text.trim()) return;
-    const newTask = { id: `task-${Date.now()}`, text: text.trim(), done: false };
+    const tempId = `task-${Date.now()}`;
+    const newTask = { id: tempId, text: text.trim(), done: false };
     setTasks((prev) => [newTask, ...prev]);
 
     if (accessToken) {
@@ -269,20 +258,21 @@ export default function App() {
         });
         const data = await res.json();
         if (data.id) {
-          setTasks((prev) => prev.map((t) => (t.id === newTask.id ? { ...t, googleTaskId: data.id } : t)));
+          setTasks((prev) => prev.map((t) => (t.id === tempId ? { ...t, id: data.id, googleTaskId: data.id } : t)));
         }
       } catch {}
     }
   };
 
   const toggleGoogleTask = async (task) => {
-    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: !t.done } : t)));
+    const nextDone = !task.done;
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: nextDone } : t)));
     if (accessToken && task.googleTaskId) {
       try {
         await fetch(`https://tasks.googleapis.com/tasks/v1/lists/@default/tasks/${task.googleTaskId}`, {
           method: 'PATCH',
           headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: !task.done ? 'completed' : 'needsAction' }),
+          body: JSON.stringify({ status: nextDone ? 'completed' : 'needsAction' }),
         });
       } catch {}
     }
@@ -305,7 +295,7 @@ export default function App() {
     setSyncing(true);
     try {
       const url = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages');
-      url.searchParams.set('maxResults', '100');
+      url.searchParams.set('maxResults', '50');
       url.searchParams.set('q', 'in:inbox');
       if (pageToken) url.searchParams.set('pageToken', pageToken);
 
@@ -327,8 +317,8 @@ export default function App() {
         const startOfYesterday = startOfToday - 86400000;
 
         const fetched = [];
-        for (let i = 0; i < listData.messages.length; i += 20) {
-          const chunk = listData.messages.slice(i, i + 20);
+        for (let i = 0; i < listData.messages.length; i += 15) {
+          const chunk = listData.messages.slice(i, i + 15);
           const chunkResults = await Promise.all(
             chunk.map(async (m) => {
               const msgRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`, {
@@ -442,7 +432,7 @@ export default function App() {
     } else if (googleClientId) {
       setSessionExpired(true);
     }
-  }, []);
+  }, [accessToken, googleClientId, fetchGmailMessages, fetchCalendarEvents, fetchGoogleTasks]);
 
   const classifiedEmails = useMemo(() => {
     return emails.map((e) => ({ ...e, bundle: classifyEmail(e, rules, bundleMap) }));
@@ -486,7 +476,7 @@ export default function App() {
   const markDone = (id, ev) => {
     ev?.stopPropagation();
     const target = emails.find((e) => e.id === id);
-    if (target?.gmailId) modifyGmailLabels(target.gmailId, [], ['INBOX']); // Archives in Gmail
+    if (target?.gmailId) modifyGmailLabels(target.gmailId, [], ['INBOX']);
     setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, status: 'done', pinned: false, completedAt: Date.now() } : e)));
     if (openEmailId === id) setOpenEmailId(null);
     showToast('Archived in Gmail (Done)');
@@ -543,13 +533,9 @@ export default function App() {
         onClick={() => setOpenEmailId(email.id)}
         className={`group flex items-center gap-3 px-4 py-3 ${darkMode ? 'bg-gray-900' : 'bg-white'} ${rowHover} border-b border-gray-100 dark:border-gray-800 cursor-pointer ${nested ? 'pl-8 bg-slate-50/50 dark:bg-gray-950/50' : ''}`}
       >
-        <div
-          className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-xs shrink-0"
-          style={{ backgroundColor: meta.color }}
-        >
+        <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-xs shrink-0" style={{ backgroundColor: meta.color }}>
           {(email.senderName || '?')[0].toUpperCase()}
         </div>
-
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
             <span className={`text-sm truncate ${email.unread ? 'font-bold' : 'font-medium'}`}>{email.senderName}</span>
@@ -560,7 +546,6 @@ export default function App() {
             <span className="text-gray-400"> — {email.snippet}</span>
           </div>
         </div>
-
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
           <button onClick={(ev) => togglePin(email.id, ev)} className={`p-1.5 rounded ${email.pinned ? 'text-blue-500' : 'text-gray-400'}`}><Pin className="w-4 h-4" /></button>
           <button onClick={(ev) => markDone(email.id, ev)} className="p-1.5 rounded text-emerald-500 hover:bg-emerald-500/10"><Check className="w-4 h-4" /></button>
@@ -630,7 +615,7 @@ export default function App() {
               })}
 
               <div className="pt-3 pb-1 px-3 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-                <span>Bundles (Buckets)</span>
+                <span>Bundles</span>
                 <button onClick={() => setRuleModalOpen(true)}><FolderPlus className="w-3.5 h-3.5" /></button>
               </div>
 
@@ -735,54 +720,91 @@ export default function App() {
           </div>
         </main>
 
-        {rightPanelOpen && (
-          <aside className={`w-80 border-l flex flex-col shrink-0 ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
-            <div className="p-3 border-b flex items-center justify-between text-xs font-semibold">
-              <span>Google Tasks &amp; Calendar</span>
-              <button onClick={() => setRightPanelOpen(false)}><X className="w-4 h-4" /></button>
-            </div>
-            <div className="p-3 space-y-4 flex-1 overflow-y-auto">
-              <div>
-                <h4 className="text-xs font-bold uppercase text-blue-500 mb-2">Google Tasks</h4>
-                <div className="flex gap-1 mb-2">
-                  <input
-                    type="text"
-                    value={newTaskText}
-                    onChange={(e) => setNewTaskText(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && (addGoogleTask(newTaskText), setNewTaskText(''))}
-                    placeholder="Add task..."
-                    className="flex-1 text-xs border rounded px-2 py-1.5 bg-transparent"
-                  />
-                  <button onClick={() => (addGoogleTask(newTaskText), setNewTaskText(''))} className="bg-blue-600 text-white px-3 py-1.5 rounded text-xs">Add</button>
-                </div>
-                <div className="space-y-1">
-                  {tasks.map((t) => (
-                    <div key={t.id} className="flex items-center justify-between text-xs p-1.5 rounded bg-gray-500/5">
-                      <span className={t.done ? 'line-through text-gray-400' : ''}>{t.text}</span>
-                      <div className="flex gap-1">
-                        <button onClick={() => toggleGoogleTask(t)} className="text-emerald-500"><Check className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => deleteGoogleTask(t)} className="text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+        {/* Gmail-Style Far Right Icon Strip & Flyout Panel */}
+        <div className="flex shrink-0 z-20">
+          {/* Slide-out Panel */}
+          {activeRightPanel && (
+            <aside className={`w-80 border-l flex flex-col ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
+              <div className="p-3 border-b flex items-center justify-between text-xs font-semibold">
+                <span>{activeRightPanel === 'tasks' ? 'Google Tasks' : 'Google Calendar'}</span>
+                <button onClick={() => setActiveRightPanel(null)}><X className="w-4 h-4 text-gray-400" /></button>
               </div>
-
-              <div className="pt-3 border-t">
-                <h4 className="text-xs font-bold uppercase text-indigo-500 mb-2">Google Calendar (Next 7 Days)</h4>
-                {calendarEvents.length === 0 ? (
-                  <div className="text-xs text-gray-400">No events found.</div>
-                ) : (
-                  calendarEvents.map((ev) => (
-                    <div key={ev.id} className="p-2 mb-2 rounded bg-indigo-500/5 border-l-2 border-indigo-500 text-xs">
-                      <div className="font-semibold">{ev.summary}</div>
+              <div className="p-3 space-y-4 flex-1 overflow-y-auto">
+                {activeRightPanel === 'tasks' ? (
+                  <div>
+                    <div className="flex gap-1 mb-3">
+                      <input
+                        type="text"
+                        value={newTaskText}
+                        onChange={(e) => setNewTaskText(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && (addGoogleTask(newTaskText), setNewTaskText(''))}
+                        placeholder="Add a task..."
+                        className="flex-1 text-xs border rounded px-2.5 py-2 bg-transparent"
+                      />
+                      <button onClick={() => (addGoogleTask(newTaskText), setNewTaskText(''))} className="bg-blue-600 text-white px-3 py-2 rounded text-xs font-medium">Add</button>
                     </div>
-                  ))
+                    {!accessToken ? (
+                      <div className="text-xs text-gray-400 text-center py-6">Connect Google to sync tasks.</div>
+                    ) : tasks.length === 0 ? (
+                      <div className="text-xs text-gray-400 text-center py-6">No tasks found.</div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {tasks.map((t) => (
+                          <div key={t.id} className="flex items-center justify-between text-xs p-2 rounded bg-gray-500/5 border border-gray-100 dark:border-gray-800">
+                            <span className={t.done ? 'line-through text-gray-400' : ''}>{t.text}</span>
+                            <div className="flex gap-1">
+                              <button onClick={() => toggleGoogleTask(t)} className="text-emerald-500 p-1"><Check className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => deleteGoogleTask(t)} className="text-red-500 p-1"><Trash2 className="w-3.5 h-3.5" /></button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    {!accessToken ? (
+                      <div className="text-xs text-gray-400 text-center py-6">Connect Google to sync calendar.</div>
+                    ) : calendarError ? (
+                      <div className="text-xs text-amber-500 text-center py-6">Calendar access required. Reconnect Google.</div>
+                    ) : calendarEvents.length === 0 ? (
+                      <div className="text-xs text-gray-400 text-center py-6">No upcoming events.</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {calendarEvents.map((ev) => (
+                          <div key={ev.id} className="p-2.5 rounded bg-indigo-500/5 border-l-4 border-indigo-500 text-xs">
+                            <div className="font-semibold">{ev.summary}</div>
+                            <div className="text-[10px] text-gray-400 mt-0.5">
+                              {ev.start?.dateTime ? new Date(ev.start.dateTime).toLocaleString() : 'All day'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
-            </div>
-          </aside>
-        )}
+            </aside>
+          )}
+
+          {/* Slim Icon Strip */}
+          <div className={`w-14 border-l flex flex-col items-center py-3 gap-4 shrink-0 ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
+            <button
+              onClick={() => setActiveRightPanel(activeRightPanel === 'calendar' ? null : 'calendar')}
+              title="Google Calendar"
+              className={`p-2.5 rounded-full transition-colors ${activeRightPanel === 'calendar' ? 'bg-blue-500/20 text-blue-500' : 'text-gray-500 hover:bg-gray-500/10'}`}
+            >
+              <CalendarIcon className="w-5 h-5 text-blue-600" />
+            </button>
+            <button
+              onClick={() => setActiveRightPanel(activeRightPanel === 'tasks' ? null : 'tasks')}
+              title="Google Tasks"
+              className={`p-2.5 rounded-full transition-colors ${activeRightPanel === 'tasks' ? 'bg-blue-500/20 text-blue-500' : 'text-gray-500 hover:bg-gray-500/10'}`}
+            >
+              <ListTodo className="w-5 h-5 text-blue-600" />
+            </button>
+          </div>
+        </div>
       </div>
 
       {toast && (
