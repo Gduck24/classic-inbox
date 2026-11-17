@@ -45,16 +45,17 @@ import {
   Tag,
 } from 'lucide-react';
 
-const ICON_OPTIONS = [
-  { name: 'Mail', icon: Mail },
-  { name: 'Bell', icon: Bell },
-  { name: 'Landmark', icon: Landmark },
-  { name: 'ShoppingBag', icon: ShoppingBag },
-  { name: 'Sparkles', icon: Sparkles },
-  { name: 'Users', icon: Users },
-  { name: 'Plane', icon: Plane },
-  { name: 'Tag', icon: Tag },
-];
+const ICON_MAP = {
+  Mail,
+  Bell,
+  Landmark,
+  ShoppingBag,
+  Sparkles,
+  Users,
+  Plane,
+  Tag,
+  BellRing,
+};
 
 const DEFAULT_BUNDLES = [
   { id: 'Primary', label: 'Primary', color: '#4285F4', iconName: 'Mail', inlineBundle: false, custom: false },
@@ -131,7 +132,7 @@ function classifyEmail(email, rules, bundleMap) {
 export default function App() {
   const [bundles, setBundles] = useState(() => {
     try {
-      const saved = localStorage.getItem('classic_inbox_bundles_v2');
+      const saved = localStorage.getItem('classic_inbox_bundles_v3');
       return saved ? JSON.parse(saved) : DEFAULT_BUNDLES;
     } catch {
       return DEFAULT_BUNDLES;
@@ -140,7 +141,7 @@ export default function App() {
 
   const [emails, setEmails] = useState(() => {
     try {
-      const saved = localStorage.getItem('classic_inbox_emails_v2');
+      const saved = localStorage.getItem('classic_inbox_emails_v3');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -149,7 +150,7 @@ export default function App() {
 
   const [rules, setRules] = useState(() => {
     try {
-      const saved = localStorage.getItem('classic_inbox_rules_v2');
+      const saved = localStorage.getItem('classic_inbox_rules_v3');
       return saved ? JSON.parse(saved) : DEFAULT_RULES;
     } catch {
       return DEFAULT_RULES;
@@ -158,7 +159,7 @@ export default function App() {
 
   const [tasks, setTasks] = useState(() => {
     try {
-      const saved = localStorage.getItem('classic_inbox_tasks_v2');
+      const saved = localStorage.getItem('classic_inbox_tasks_v3');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -180,9 +181,6 @@ export default function App() {
   const [expandedBundles, setExpandedBundles] = useState({});
   const [openEmailId, setOpenEmailId] = useState(null);
   const [snoozePickerId, setSnoozePickerId] = useState(null);
-  const [customSnoozeModal, setCustomSnoozeModal] = useState(null); // emailId
-  const [customSnoozeVal, setCustomSnoozeVal] = useState('');
-  const [lastSnoozeLabel, setLastSnoozeLabel] = useState(() => localStorage.getItem('classic_inbox_last_snooze') || 'Tomorrow (8 AM)');
 
   const [ruleModalOpen, setRuleModalOpen] = useState(false);
   const [connectModalOpen, setConnectModalOpen] = useState(false);
@@ -201,12 +199,11 @@ export default function App() {
   });
 
   const [composeForm, setComposeForm] = useState({ mode: 'new', to: '', subject: '', body: '', threadId: null, inReplyTo: null });
-  const [editingBundle, setEditingBundle] = useState(null);
 
-  useEffect(() => { localStorage.setItem('classic_inbox_bundles_v2', JSON.stringify(bundles)); }, [bundles]);
-  useEffect(() => { localStorage.setItem('classic_inbox_emails_v2', JSON.stringify(emails)); }, [emails]);
-  useEffect(() => { localStorage.setItem('classic_inbox_rules_v2', JSON.stringify(rules)); }, [rules]);
-  useEffect(() => { localStorage.setItem('classic_inbox_tasks_v2', JSON.stringify(tasks)); }, [tasks]);
+  useEffect(() => { localStorage.setItem('classic_inbox_bundles_v3', JSON.stringify(bundles)); }, [bundles]);
+  useEffect(() => { localStorage.setItem('classic_inbox_emails_v3', JSON.stringify(emails)); }, [emails]);
+  useEffect(() => { localStorage.setItem('classic_inbox_rules_v3', JSON.stringify(rules)); }, [rules]);
+  useEffect(() => { localStorage.setItem('classic_inbox_tasks_v3', JSON.stringify(tasks)); }, [tasks]);
   useEffect(() => { localStorage.setItem('classic_inbox_dark', String(darkMode)); }, [darkMode]);
   useEffect(() => { localStorage.setItem('classic_inbox_compact', String(compactMode)); }, [compactMode]);
 
@@ -221,7 +218,6 @@ export default function App() {
     setTimeout(() => setToast(null), 3200);
   };
 
-  // Google Calendar API
   const fetchCalendarEvents = useCallback(async (token) => {
     if (!token) return;
     try {
@@ -244,7 +240,6 @@ export default function App() {
     }
   }, []);
 
-  // Google Tasks API
   const fetchGoogleTasks = useCallback(async (token) => {
     if (!token) return;
     try {
@@ -254,14 +249,7 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         if (data.items) {
-          const mapped = data.items.map((t) => ({
-            id: t.id,
-            text: t.title,
-            done: t.status === 'completed',
-            due: t.due ? new Date(t.due).toLocaleDateString() : 'Today',
-            googleTaskId: t.id,
-          }));
-          setTasks(mapped);
+          setTasks(data.items.map((t) => ({ id: t.id, text: t.title, done: t.status === 'completed', googleTaskId: t.id })));
         }
       }
     } catch {}
@@ -269,7 +257,7 @@ export default function App() {
 
   const addGoogleTask = async (text) => {
     if (!text.trim()) return;
-    const newTask = { id: `task-${Date.now()}`, text: text.trim(), done: false, due: 'Today' };
+    const newTask = { id: `task-${Date.now()}`, text: text.trim(), done: false };
     setTasks((prev) => [newTask, ...prev]);
 
     if (accessToken) {
@@ -350,7 +338,6 @@ export default function App() {
               const headers = msgData.payload?.headers || [];
               const from = headers.find((h) => h.name.toLowerCase() === 'from')?.value || 'Gmail Sender';
               const subject = headers.find((h) => h.name.toLowerCase() === 'subject')?.value || '(No Subject)';
-              const messageIdHeader = headers.find((h) => h.name.toLowerCase() === 'message-id')?.value || null;
               const internalTs = Number(msgData.internalDate || Date.now());
               const msgDate = new Date(internalTs);
 
@@ -373,7 +360,6 @@ export default function App() {
                 isReminder: false,
                 gmailId: m.id,
                 threadId: msgData.threadId || null,
-                messageIdHeader,
                 gmailLabels: labelIds,
                 senderName: emailMatch ? from.replace(/<[^>]+>/, '').replace(/"/g, '').trim() : from,
                 senderEmail: emailMatch ? emailMatch[1] : from,
@@ -506,15 +492,34 @@ export default function App() {
     showToast('Archived in Gmail (Done)');
   };
 
-  const snoozeEmail = (id, label, ev) => {
+  const sweepBucket = (bucket) => {
+    const now = Date.now();
+    setEmails((prev) =>
+      prev.map((e) => {
+        if (e.status === 'inbox' && e.bucket === bucket && !e.pinned) {
+          if (e.gmailId) modifyGmailLabels(e.gmailId, [], ['INBOX']);
+          return { ...e, status: 'done', completedAt: now };
+        }
+        return e;
+      })
+    );
+    showToast(`Swept unpinned items in ${bucket}`);
+  };
+
+  const sweepBundle = (bucket, bundleName, ev) => {
     ev?.stopPropagation();
-    setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, status: 'snoozed', pinned: false, snoozedUntil: label } : e)));
-    setSnoozePickerId(null);
-    setCustomSnoozeModal(null);
-    setLastSnoozeLabel(label);
-    localStorage.setItem('classic_inbox_last_snooze', label);
-    if (openEmailId === id) setOpenEmailId(null);
-    showToast(`Snoozed until ${label}`);
+    const now = Date.now();
+    setEmails((prev) =>
+      prev.map((e) => {
+        const b = classifyEmail(e, rules, bundleMap);
+        if (e.status === 'inbox' && e.bucket === bucket && b === bundleName && !e.pinned) {
+          if (e.gmailId) modifyGmailLabels(e.gmailId, [], ['INBOX']);
+          return { ...e, status: 'done', completedAt: now };
+        }
+        return e;
+      })
+    );
+    showToast(`Swept ${bundleName} in ${bucket}`);
   };
 
   const moveBundleOrder = (index, direction) => {
@@ -528,10 +533,47 @@ export default function App() {
   };
 
   const cardSurface = darkMode ? 'bg-gray-900 border-gray-800 text-gray-100' : 'bg-white border-gray-200 text-gray-900';
+  const rowHover = darkMode ? 'hover:bg-gray-800/80 border-gray-800' : 'hover:bg-gray-50 border-gray-100';
+
+  const renderEmailRow = (email, nested = false) => {
+    const meta = bundleMap[email.bundle] || bundleMap.Primary;
+    return (
+      <div
+        key={email.id}
+        onClick={() => setOpenEmailId(email.id)}
+        className={`group flex items-center gap-3 px-4 py-3 ${darkMode ? 'bg-gray-900' : 'bg-white'} ${rowHover} border-b border-gray-100 dark:border-gray-800 cursor-pointer ${nested ? 'pl-8 bg-slate-50/50 dark:bg-gray-950/50' : ''}`}
+      >
+        <div
+          className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-xs shrink-0"
+          style={{ backgroundColor: meta.color }}
+        >
+          {(email.senderName || '?')[0].toUpperCase()}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <span className={`text-sm truncate ${email.unread ? 'font-bold' : 'font-medium'}`}>{email.senderName}</span>
+            <span className="text-xs text-gray-400 shrink-0">{email.timeLabel}</span>
+          </div>
+          <div className="text-sm truncate">
+            <span className={email.unread ? 'font-semibold' : ''}>{email.subject}</span>
+            <span className="text-gray-400"> — {email.snippet}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          <button onClick={(ev) => togglePin(email.id, ev)} className={`p-1.5 rounded ${email.pinned ? 'text-blue-500' : 'text-gray-400'}`}><Pin className="w-4 h-4" /></button>
+          <button onClick={(ev) => markDone(email.id, ev)} className="p-1.5 rounded text-emerald-500 hover:bg-emerald-500/10"><Check className="w-4 h-4" /></button>
+        </div>
+      </div>
+    );
+  };
+
+  const buckets = ['Today', 'Yesterday', 'Earlier this month'];
+  const openEmail = classifiedEmails.find((e) => e.id === openEmailId);
 
   return (
     <div className={`h-full flex flex-col overflow-hidden ${darkMode ? 'bg-gray-950 text-gray-100' : 'bg-[#f2f2f2] text-gray-900'}`}>
-      {/* Top Header Bar */}
       <header className={`bg-[#4285F4] text-white shadow-md px-4 h-14 flex items-center justify-between gap-3 shrink-0 z-30`}>
         <div className="flex items-center gap-3">
           <button onClick={() => setSidebarOpen((v) => !v)} className="p-2 rounded-full hover:bg-white/15">
@@ -564,9 +606,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Layout */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Sidebar */}
         {sidebarOpen && (
           <aside className={`w-60 border-r flex flex-col justify-between py-3 shrink-0 z-20 ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
             <div className="overflow-y-auto px-2 space-y-1">
@@ -608,7 +648,6 @@ export default function App() {
                     <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5">
                       <button onClick={() => moveBundleOrder(idx, 'up')} className="p-1 hover:text-blue-500"><ArrowUp className="w-3 h-3" /></button>
                       <button onClick={() => moveBundleOrder(idx, 'down')} className="p-1 hover:text-blue-500"><ArrowDown className="w-3 h-3" /></button>
-                      <button onClick={() => setEditingBundle(b)} className="p-1 hover:text-blue-500"><Settings className="w-3 h-3" /></button>
                     </div>
                   </div>
                 );
@@ -617,29 +656,85 @@ export default function App() {
           </aside>
         )}
 
-        {/* Center Inbox */}
         <main className="flex-1 overflow-y-auto p-4">
-          <div className="max-w-4xl mx-auto space-y-3">
-            {visibleEmails.length === 0 ? (
-              <div className="p-12 text-center text-gray-400">All clear! No messages here.</div>
+          <div className="max-w-4xl mx-auto pb-20">
+            {openEmail ? (
+              <div className={`rounded-lg border shadow-sm p-6 ${cardSurface}`}>
+                <button onClick={() => setOpenEmailId(null)} className="flex items-center gap-1.5 text-sm mb-4 font-medium opacity-80 hover:opacity-100">
+                  <ArrowLeft className="w-4 h-4" /> Back to Inbox
+                </button>
+                <h2 className="text-xl font-semibold mb-2">{openEmail.subject}</h2>
+                <div className="text-xs text-gray-500 mb-4 pb-2 border-b">{openEmail.senderName} &lt;{openEmail.senderEmail}&gt;</div>
+                <div className="text-sm whitespace-pre-line">{openEmail.body || openEmail.snippet}</div>
+              </div>
+            ) : activeNav === 'inbox' ? (
+              buckets.map((bucket) => {
+                const bucketItems = visibleEmails.filter((e) => e.bucket === bucket);
+                if (bucketItems.length === 0) return null;
+
+                const directItems = bucketItems.filter((e) => !bundleMap[e.bundle]?.inlineBundle);
+                const bundledGroups = {};
+                bucketItems.filter((e) => bundleMap[e.bundle]?.inlineBundle).forEach((e) => {
+                  if (!bundledGroups[e.bundle]) bundledGroups[e.bundle] = [];
+                  bundledGroups[e.bundle].push(e);
+                });
+
+                return (
+                  <section key={bucket} className="mb-6">
+                    <div className="flex items-center justify-between px-1 mb-2">
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">{bucket}</h3>
+                      <button onClick={() => sweepBucket(bucket)} className="text-xs text-gray-400 hover:text-emerald-500 flex items-center gap-1">
+                        <CheckCheck className="w-3.5 h-3.5" /> Sweep unpinned
+                      </button>
+                    </div>
+                    <div className={`rounded-lg shadow-sm border overflow-hidden ${cardSurface}`}>
+                      {directItems.map((email) => renderEmailRow(email, false))}
+                      {Object.entries(bundledGroups).map(([bundleName, items]) => {
+                        const meta = bundleMap[bundleName];
+                        if (!meta) return null;
+                        const expandKey = `${bucket}-${bundleName}`;
+                        const isExpanded = !!expandedBundles[expandKey];
+                        const Icon = ICON_MAP[meta.iconName] || Bell;
+
+                        return (
+                          <div key={expandKey} className="border-b border-gray-100 dark:border-gray-800 last:border-b-0">
+                            <div
+                              onClick={() => setExpandedBundles((prev) => ({ ...prev, [expandKey]: !prev[expandKey] }))}
+                              className={`flex items-center gap-3 px-4 py-3 cursor-pointer ${rowHover}`}
+                            >
+                              <div className="w-8 h-8 rounded-full flex items-center justify-center text-white shrink-0" style={{ backgroundColor: meta.color }}>
+                                <Icon className="w-4 h-4" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-sm" style={{ color: meta.color }}>{meta.label} ({items.length})</span>
+                                  {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                                </div>
+                              </div>
+                              <button onClick={(ev) => sweepBundle(bucket, bundleName, ev)} className="p-1.5 rounded text-emerald-500 hover:bg-emerald-500/10" title={`Sweep ${meta.label}`}>
+                                <CheckCheck className="w-4 h-4" />
+                              </button>
+                            </div>
+                            {isExpanded && items.map((item) => renderEmailRow(item, true))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                );
+              })
             ) : (
-              visibleEmails.map((email) => (
-                <div key={email.id} onClick={() => setOpenEmailId(email.id)} className={`p-3 rounded-lg border shadow-sm cursor-pointer flex items-center justify-between ${cardSurface}`}>
-                  <div className="min-w-0 flex-1">
-                    <div className="font-semibold text-sm truncate">{email.senderName}</div>
-                    <div className="text-xs truncate">{email.subject} — <span className="text-gray-400">{email.snippet}</span></div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={(ev) => togglePin(email.id, ev)} className={`p-1.5 rounded ${email.pinned ? 'text-blue-500' : 'text-gray-400'}`}><Pin className="w-4 h-4" /></button>
-                    <button onClick={(ev) => markDone(email.id, ev)} className="p-1.5 rounded text-emerald-500 hover:bg-emerald-500/10"><Check className="w-4 h-4" /></button>
-                  </div>
-                </div>
-              ))
+              <div className={`rounded-lg shadow-sm border overflow-hidden ${cardSurface}`}>
+                {visibleEmails.length === 0 ? (
+                  <div className="p-12 text-center text-gray-400">No items found here.</div>
+                ) : (
+                  visibleEmails.map((email) => renderEmailRow(email, false))
+                )}
+              </div>
             )}
           </div>
         </main>
 
-        {/* Right Panel (Google Calendar + Real Google Tasks) */}
         {rightPanelOpen && (
           <aside className={`w-80 border-l flex flex-col shrink-0 ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
             <div className="p-3 border-b flex items-center justify-between text-xs font-semibold">
@@ -672,10 +767,29 @@ export default function App() {
                   ))}
                 </div>
               </div>
+
+              <div className="pt-3 border-t">
+                <h4 className="text-xs font-bold uppercase text-indigo-500 mb-2">Google Calendar (Next 7 Days)</h4>
+                {calendarEvents.length === 0 ? (
+                  <div className="text-xs text-gray-400">No events found.</div>
+                ) : (
+                  calendarEvents.map((ev) => (
+                    <div key={ev.id} className="p-2 mb-2 rounded bg-indigo-500/5 border-l-2 border-indigo-500 text-xs">
+                      <div className="font-semibold">{ev.summary}</div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </aside>
         )}
       </div>
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-4 py-2.5 rounded-full shadow-lg z-50">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
