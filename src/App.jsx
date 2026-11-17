@@ -32,6 +32,7 @@ import {
   User,
   Database,
   Tag,
+  Edit3,
 } from 'lucide-react';
 
 const ICON_MAP = {
@@ -88,19 +89,6 @@ const SAMPLE_EMAILS = [
     pinned: false,
     unread: true,
   },
-  {
-    id: 'sample-3',
-    senderName: 'Kickstarter Updates',
-    senderEmail: 'no-reply@kickstarter.com',
-    subject: 'Project Update #12: CNC Laser Enclosure Shipping Status',
-    snippet: 'Your reward package has cleared initial quality inspection...',
-    body: 'Hello Backer,\n\nYour reward package for the advanced enclosure kit has cleared initial quality inspection and is queued for freight carrier pickup.\n\nTrack your shipment details inside your dashboard.',
-    timeLabel: 'Yesterday',
-    bucket: 'Yesterday',
-    status: 'inbox',
-    pinned: false,
-    unread: false,
-  },
 ];
 
 const SAMPLE_TASKS = [
@@ -148,6 +136,9 @@ export default function App() {
   const [expandedBundles, setExpandedBundles] = useState({});
   const [openEmailId, setOpenEmailId] = useState(null);
   const [newTaskText, setNewTaskText] = useState('');
+  const [editingTaskId, setEditingTaskId] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDetails, setEditDetails] = useState('');
   const [toast, setToast] = useState(null);
   const [isSampleMode, setIsSampleMode] = useState(true);
 
@@ -224,12 +215,23 @@ export default function App() {
     setTasks((prev) => [{ id: `task-${Date.now()}`, text: text.trim(), details: '', done: false }, ...prev]);
   };
 
-  const toggleTask = (task) => {
+  const toggleTask = (task, ev) => {
+    ev?.stopPropagation();
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: !t.done } : t)));
   };
 
-  const deleteTask = (task) => {
+  const deleteTask = (task, ev) => {
+    ev?.stopPropagation();
     setTasks((prev) => prev.filter((t) => t.id !== task.id));
+    if (editingTaskId === task.id) setEditingTaskId(null);
+  };
+
+  const saveTaskEdit = (id) => {
+    setTasks((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, text: editTitle, details: editDetails } : t))
+    );
+    setEditingTaskId(null);
+    showToast('Task updated');
   };
 
   const cardSurface = darkMode ? 'bg-gray-900 border-gray-800 text-gray-100' : 'bg-white border-gray-200 text-gray-900';
@@ -415,7 +417,7 @@ export default function App() {
           </div>
         </main>
 
-        {/* Gmail-Style Exact Right Panel & Add-on Rail */}
+        {/* Gmail-Style Exact Right Panel & Interactive Tasks */}
         <div className="flex shrink-0 z-20">
           {activeRightPanel && (
             <aside className={`w-80 border-l flex flex-col ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
@@ -454,26 +456,70 @@ export default function App() {
                         <div className="text-xs text-gray-400 text-center py-6">No tasks found.</div>
                       ) : (
                         tasks.map((t) => (
-                          <div key={t.id} className="flex items-start gap-3 group">
-                            <input
-                              type="checkbox"
-                              checked={t.done}
-                              onChange={() => toggleTask(t)}
-                              className="w-5 h-5 rounded-full border-2 border-gray-400 text-blue-600 focus:ring-0 mt-0.5 cursor-pointer shrink-0"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className={`text-sm ${t.done ? 'line-through text-gray-400' : 'text-gray-800 dark:text-gray-200'}`}>
-                                {t.text}
-                              </div>
-                              {t.details && (
-                                <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">
-                                  {t.details}
+                          <div key={t.id} className="p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 border border-transparent hover:border-gray-200 dark:hover:border-gray-700 transition-all">
+                            {editingTaskId === t.id ? (
+                              <div className="space-y-2">
+                                <input
+                                  type="text"
+                                  value={editTitle}
+                                  onChange={(e) => setEditTitle(e.target.value)}
+                                  className="w-full text-xs font-medium border rounded px-2 py-1 bg-transparent"
+                                  placeholder="Task title"
+                                />
+                                <textarea
+                                  value={editDetails}
+                                  onChange={(e) => setEditDetails(e.target.value)}
+                                  className="w-full text-xs border rounded p-2 bg-transparent h-16 resize-none"
+                                  placeholder="Add details / equipment list..."
+                                />
+                                <div className="flex justify-end gap-2">
+                                  <button onClick={() => setEditingTaskId(null)} className="text-xs px-2.5 py-1 text-gray-500">Cancel</button>
+                                  <button onClick={() => saveTaskEdit(t.id)} className="text-xs px-3 py-1 bg-blue-600 text-white rounded font-medium">Save</button>
                                 </div>
-                              )}
-                            </div>
-                            <button onClick={() => deleteTask(t)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 p-1">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-start gap-3 group">
+                                <input
+                                  type="checkbox"
+                                  checked={t.done}
+                                  onChange={(ev) => toggleTask(t, ev)}
+                                  className="w-5 h-5 rounded-full border-2 border-gray-400 text-blue-600 focus:ring-0 mt-0.5 cursor-pointer shrink-0"
+                                />
+                                <div
+                                  className="flex-1 min-w-0 cursor-pointer"
+                                  onClick={() => {
+                                    setEditingTaskId(t.id);
+                                    setEditTitle(t.text);
+                                    setEditDetails(t.details || '');
+                                  }}
+                                >
+                                  <div className={`text-sm ${t.done ? 'line-through text-gray-400' : 'text-gray-800 dark:text-gray-200'}`}>
+                                    {t.text}
+                                  </div>
+                                  {t.details && (
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed whitespace-pre-line bg-gray-50 dark:bg-gray-900/50 p-2 rounded border border-gray-100 dark:border-gray-800">
+                                      {t.details}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={() => {
+                                      setEditingTaskId(t.id);
+                                      setEditTitle(t.text);
+                                      setEditDetails(t.details || '');
+                                    }}
+                                    className="text-gray-400 hover:text-blue-500 p-1"
+                                    title="Edit task"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button onClick={(ev) => deleteTask(t, ev)} className="text-gray-400 hover:text-red-500 p-1" title="Delete task">
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ))
                       )}
