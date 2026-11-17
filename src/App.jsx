@@ -28,6 +28,7 @@ import {
   Reply,
   Forward,
   RefreshCw,
+  GripVertical,
 } from 'lucide-react';
 
 const BUNDLE_META = {
@@ -176,12 +177,10 @@ function extractGmailBodies(payload) {
 }
 
 function classifyEmail(email, rules) {
-  // 1. Explicit per-message override wins first
   if (email.manualBundle && BUNDLE_META[email.manualBundle]) {
     return email.manualBundle;
   }
 
-  // 2. Your deterministic custom rules run top-to-bottom (first match wins)
   const senderStr = `${email.senderName} ${email.senderEmail}`.toLowerCase();
   const subjectStr = (email.subject || '').toLowerCase();
   const anyStr = `${senderStr} ${subjectStr} ${(email.snippet || '').toLowerCase()}`;
@@ -206,7 +205,6 @@ function classifyEmail(email, rules) {
     }
   }
 
-  // 3. Fallback to Gmail's native categories if no custom rule claimed it
   const labels = email.gmailLabels || [];
   if (labels.includes('CATEGORY_UPDATES')) return 'Updates';
   if (labels.includes('CATEGORY_PROMOTIONS')) return 'Promos';
@@ -294,6 +292,10 @@ export default function App() {
   const [syncing, setSyncing] = useState(false);
   const [nextPageToken, setNextPageToken] = useState(null);
 
+  // Drag-and-drop state
+  const [draggedEmailId, setDraggedEmailId] = useState(null);
+  const [dragOverTarget, setDragOverTarget] = useState(null);
+
   const [newRule, setNewRule] = useState({ name: '', field: 'sender', pattern: '', bundle: 'Updates' });
   const [googleClientId, setGoogleClientId] = useState(() => localStorage.getItem('classic_inbox_client_id') || '');
   const [accessToken, setAccessToken] = useState(() => {
@@ -328,7 +330,7 @@ export default function App() {
 
   const showToast = (msg) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 3200);
+    setTimeout(() => setToast(null), 3400);
   };
 
   const fetchGmailMessages = useCallback(
@@ -361,7 +363,6 @@ export default function App() {
           const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
           const startOfYesterday = startOfToday - 86400000;
 
-          // Fetch in chunks of 20 so browser doesn't throttle concurrent connections
           const fetched = [];
           for (let i = 0; i < listData.messages.length; i += 20) {
             const chunk = listData.messages.slice(i, i + 20);
@@ -418,7 +419,6 @@ export default function App() {
           }
 
           setEmails((prev) => {
-            // Preserve local pin/snooze states for already-loaded messages
             const existingMap = new Map(prev.map((item) => [item.id, item]));
             const merged = fetched.map((f) => {
               const old = existingMap.get(f.id);
@@ -488,7 +488,6 @@ export default function App() {
     [fetchGmailMessages]
   );
 
-  // Auto-sync on page load: use cached valid token or silently refresh if Client ID is saved
   useEffect(() => {
     if (accessToken) {
       fetchGmailMessages(accessToken);
@@ -583,6 +582,55 @@ export default function App() {
     setSnoozePickerId(null);
     if (openEmailId === id) setOpenEmailId(null);
     showToast(`Snoozed until ${label}`);
+  };
+
+  const assignSenderRule = (email, targetBundle) => {
+    const cleanPattern = email.senderEmail.toLowerCase();
+    const ruleId = `r-${Date.now()}`;
+    setRules((prev) => [
+      {
+        id: ruleId,
+        name: `${email.senderName} -> ${targetBundle}`,
+        field: 'sender',
+        pattern: cleanPattern,
+        bundle: targetBundle,
+      },
+      ...prev.filter((r) => !(r.field === 'sender' && r.pattern.toLowerCase() === cleanPattern)),
+    ]);
+    setEmails((prev) =>
+      prev.map((e) =>
+        e.id === email.id || e.senderEmail.toLowerCase() === cleanPattern
+          ? { ...e, manualBundle: targetBundle, status: e.status === 'done' ? 'inbox' : e.status }
+          : e
+      )
+    );
+    showToast(`Moved to ${targetBundle} & saved permanent rule for ${email.senderName}`);
+  };
+
+  // Drag-and-drop drop handler
+  const handleDropOnTarget = (e, targetType, targetValue) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const emailId = e.dataTransfer?.getData('text/plain') || draggedEmailId;
+    setDraggedEmailId(null);
+    setDragOverTarget(null);
+
+    if (!emailId) return;
+    const emailObj = classifiedEmails.find((item) => item.id === emailId);
+    if (!emailObj) return;
+
+    if (targetType === 'bundle') {
+      assignSenderRule(emailObj, targetValue);
+    } else if (targetType === 'status') {
+      if (targetValue === 'done') {
+        markDone(emailId);
+      } else if (targetValue === 'snoozed') {
+        snoozeEmail(emailId, 'Tomorrow (8 AM)');
+      } else if (targetValue === 'inbox') {
+        moveBackToInbox(emailId);
+        assignSenderRule(emailObj, 'Primary');
+      }
+    }
   };
 
   const openReplyComposer = (email) => {
@@ -683,23 +731,6 @@ export default function App() {
     showToast(`Swept unpinned items in ${bucket}`);
   };
 
-  const assignSenderRule = (email, targetBundle) => {
-    const cleanPattern = email.senderEmail.toLowerCase();
-    const ruleId = `r-${Date.now()}`;
-    setRules((prev) => [
-      {
-        id: ruleId,
-        name: `${email.senderName} -> ${targetBundle}`,
-        field: 'sender',
-        pattern: cleanPattern,
-        bundle: targetBundle,
-      },
-      ...prev,
-    ]);
-    setEmails((prev) => prev.map((e) => (e.id === email.id ? { ...e, manualBundle: targetBundle } : e)));
-    showToast(`Future messages from ${email.senderName} -> ${targetBundle}`);
-  };
-
   const handleEmlFiles = async (fileList) => {
     const imported = [];
     for (const file of Array.from(fileList)) {
@@ -739,4 +770,811 @@ export default function App() {
       : 'bg-[#4285F4]';
 
   const renderEmailRow = (email, nested = false) => {
-    const meta = BUNDLE_META[email.bundle]
+    const meta = BUNDLE_META[email.bundle] || BUNDLE_META.Primary;
+    const isBeingDragged = draggedEmailId === email.id;
+
+    return (
+      <div
+        key={email.id}
+        draggable
+        onDragStart={(e) => {
+          setDraggedEmailId(email.id);
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', email.id);
+        }}
+        onDragEnd={() => {
+          setDraggedEmailId(null);
+          setDragOverTarget(null);
+        }}
+        onClick={() => {
+          setOpenEmailId(email.id);
+          if (email.unread && email.gmailId) modifyGmailLabels(email.gmailId, [], ['UNREAD']);
+          setEmails((prev) => prev.map((item) => (item.id === email.id ? { ...item, unread: false } : item)));
+        }}
+        className={`group relative flex items-center gap-2.5 px-3 sm:px-4 py-3 bg-white hover:bg-gray-50 cursor-grab active:cursor-grabbing border-b border-gray-100 transition-all select-none ${
+          nested ? 'pl-7 sm:pl-8 bg-slate-50/40' : ''
+        } ${isBeingDragged ? 'opacity-40 bg-blue-50' : ''}`}
+      >
+        <GripVertical className="w-4 h-4 text-gray-300 group-hover:text-gray-400 shrink-0 hidden sm:block" />
+
+        <div
+          className="w-9 h-9 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0"
+          style={{ backgroundColor: meta.color }}
+        >
+          {(email.senderName || '?')[0].toUpperCase()}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <span className={`text-sm truncate ${email.unread ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`}>
+              {email.senderName}
+            </span>
+            <span className="text-xs text-gray-400 shrink-0 group-hover:hidden">{email.timeLabel}</span>
+          </div>
+          <div className="text-sm text-gray-800 truncate">
+            <span className={email.unread ? 'font-semibold' : ''}>{email.subject}</span>
+            <span className="text-gray-400"> — {email.snippet}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
+          <button
+            title="Pin to Inbox"
+            onClick={(ev) => togglePin(email.id, ev)}
+            className={`p-2 rounded-full hover:bg-gray-200 ${email.pinned ? 'text-blue-600 opacity-100' : 'text-gray-500'}`}
+          >
+            <Pin className="w-4 h-4" />
+          </button>
+
+          <div className="relative">
+            <button
+              title="Snooze"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                setSnoozePickerId(snoozePickerId === email.id ? null : email.id);
+              }}
+              className="p-2 rounded-full hover:bg-gray-200 text-gray-500"
+            >
+              <Clock className="w-4 h-4" />
+            </button>
+            {snoozePickerId === email.id && (
+              <div
+                onClick={(ev) => ev.stopPropagation()}
+                className="absolute right-0 top-9 z-30 w-44 bg-white rounded-lg shadow-xl border border-gray-200 py-1 text-sm"
+              >
+                {['Later today (6 PM)', 'Tomorrow (8 AM)', 'Next week (Mon)'].map((slot) => (
+                  <button
+                    key={slot}
+                    onClick={(ev) => snoozeEmail(email.id, slot, ev)}
+                    className="w-full text-left px-3 py-2 hover:bg-amber-50 text-gray-700"
+                  >
+                    {slot}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {email.status === 'done' ? (
+            <button
+              title="Move back to Inbox"
+              onClick={(ev) => moveBackToInbox(email.id, ev)}
+              className="p-2 rounded-full hover:bg-blue-100 text-blue-600"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          ) : (
+            <button
+              title="Mark Done"
+              onClick={(ev) => markDone(email.id, ev)}
+              className="p-2 rounded-full hover:bg-emerald-100 text-emerald-600"
+            >
+              <Check className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const buckets = ['Today', 'Yesterday', 'Earlier this month'];
+
+  return (
+    <div
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        if (e.dataTransfer?.files?.length) handleEmlFiles(e.dataTransfer.files);
+      }}
+      className="h-full flex flex-col bg-[#f2f2f2] overflow-hidden"
+      style={{ paddingTop: 'env(safe-area-inset-top)' }}
+    >
+      <header className={`${headerColor} text-white shadow-md px-3 sm:px-5 h-14 flex items-center justify-between gap-3 shrink-0 transition-colors`}>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setSidebarOpen((v) => !v)}
+            className="p-2 rounded-full hover:bg-white/15 transition-colors"
+            aria-label="Toggle Menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <span className="font-semibold text-lg tracking-tight">
+            {activeNav === 'inbox'
+              ? 'Inbox'
+              : activeNav === 'snoozed'
+              ? 'Snoozed'
+              : activeNav === 'done'
+              ? 'Done'
+              : activeNav.replace('bundle:', '')}
+          </span>
+        </div>
+
+        <div className="flex-1 max-w-xl">
+          <div className="relative flex items-center bg-white/20 focus-within:bg-white focus-within:text-gray-900 rounded-md px-3 py-1.5 transition-colors">
+            <Search className="w-4 h-4 mr-2 opacity-80 shrink-0" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search mail & bundles..."
+              className="w-full bg-transparent text-sm placeholder-white/80 focus:placeholder-gray-400 focus:outline-none"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="ml-1">
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {activeNav === 'inbox' && (
+            <button
+              onClick={() => setPinnedOnly((p) => !p)}
+              title="Show Pinned Only"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                pinnedOnly ? 'bg-white text-blue-600 shadow' : 'bg-white/15 text-white hover:bg-white/25'
+              }`}
+            >
+              <Pin className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Pinned</span>
+            </button>
+          )}
+
+          {accessToken && (
+            <button
+              onClick={() => fetchGmailMessages(accessToken)}
+              disabled={syncing}
+              title="Refresh Inbox"
+              className="p-2 rounded-full bg-white/15 hover:bg-white/25 text-white transition-colors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+            </button>
+          )}
+
+          <button
+            onClick={() => setConnectModalOpen(true)}
+            className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-full text-xs font-medium transition-colors"
+          >
+            <KeyRound className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">{accessToken ? 'Gmail Connected' : 'Connect / .EML'}</span>
+          </button>
+        </div>
+      </header>
+
+      <div className="flex-1 flex overflow-hidden relative">
+        {sidebarOpen && (
+          <aside className="w-60 bg-white border-r border-gray-200 flex flex-col justify-between py-3 shrink-0 z-20 absolute md:static inset-y-0 left-0 shadow-lg md:shadow-none">
+            <div className="overflow-y-auto px-2 space-y-1">
+              {[
+                { id: 'inbox', label: 'Inbox', icon: InboxIcon, color: 'text-blue-600' },
+                { id: 'snoozed', label: 'Snoozed', icon: Clock, color: 'text-amber-600' },
+                { id: 'done', label: 'Done', icon: CheckCheck, color: 'text-emerald-600' },
+              ].map((item) => {
+                const Icon = item.icon;
+                const active = activeNav === item.id;
+                const dropKey = `nav-${item.id}`;
+                const isDragOver = dragOverTarget === dropKey;
+
+                return (
+                  <button
+                    key={item.id}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragOverTarget(dropKey);
+                    }}
+                    onDragLeave={() => setDragOverTarget(null)}
+                    onDrop={(e) => handleDropOnTarget(e, 'status', item.id)}
+                    onClick={() => {
+                      setActiveNav(item.id);
+                      setOpenEmailId(null);
+                      if (window.innerWidth < 768) setSidebarOpen(false);
+                    }}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      isDragOver
+                        ? 'ring-2 ring-blue-500 bg-blue-50 scale-[1.02]'
+                        : active
+                        ? 'bg-blue-50 text-blue-700'
+                        : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 ${item.color}`} />
+                    <span>{item.label}</span>
+                    {isDragOver && <span className="ml-auto text-[10px] font-bold text-blue-600">Drop</span>}
+                  </button>
+                );
+              })}
+
+              <div className="pt-3 pb-1 px-3 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                <span>Bundles</span>
+                {draggedEmailId && <span className="text-blue-600 animate-pulse">Drop to route</span>}
+              </div>
+
+              {Object.values(BUNDLE_META)
+                .filter((b) => b.id !== 'Primary')
+                .map((b) => {
+                  const Icon = b.icon;
+                  const active = activeNav === `bundle:${b.id}`;
+                  const count = classifiedEmails.filter((e) => e.status !== 'done' && e.bundle === b.id).length;
+                  const dropKey = `nav-bundle-${b.id}`;
+                  const isDragOver = dragOverTarget === dropKey;
+
+                  return (
+                    <button
+                      key={b.id}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setDragOverTarget(dropKey);
+                      }}
+                      onDragLeave={() => setDragOverTarget(null)}
+                      onDrop={(e) => handleDropOnTarget(e, 'bundle', b.id)}
+                      onClick={() => {
+                        setActiveNav(`bundle:${b.id}`);
+                        setOpenEmailId(null);
+                        if (window.innerWidth < 768) setSidebarOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-all ${
+                        isDragOver
+                          ? 'ring-2 ring-blue-500 bg-blue-50 font-semibold scale-[1.02]'
+                          : active
+                          ? 'bg-gray-100 font-semibold text-gray-900'
+                          : 'text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="flex items-center gap-3">
+                        <Icon className="w-4 h-4" style={{ color: b.color }} />
+                        <span>{b.label}</span>
+                      </span>
+                      {isDragOver ? (
+                        <span className="text-[10px] font-bold text-blue-600">+ Rule</span>
+                      ) : (
+                        count > 0 && <span className="text-xs text-gray-400">{count}</span>
+                      )}
+                    </button>
+                  );
+                })}
+            </div>
+
+            <div className="px-2 pt-2 border-t border-gray-100 space-y-1">
+              <button
+                onClick={() => setRuleModalOpen(true)}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-100 font-medium"
+              >
+                <Settings className="w-4 h-4 text-gray-500" />
+                <span>Edit Routing Rules</span>
+              </button>
+              <button
+                onClick={resetDemoData}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset Demo Data</span>
+              </button>
+            </div>
+          </aside>
+        )}
+
+        <main className="flex-1 overflow-y-auto px-2 sm:px-6 py-4">
+          <div className="max-w-4xl mx-auto pb-20">
+            {openEmail ? (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2 bg-gray-50">
+                  <button
+                    onClick={() => setOpenEmailId(null)}
+                    className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-900"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>Back</span>
+                  </button>
+
+                  <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
+                    <select
+                      value={openEmail.bundle}
+                      onChange={(e) => assignSenderRule(openEmail, e.target.value)}
+                      className="text-xs border border-gray-300 rounded px-2 py-1.5 bg-white text-gray-700"
+                      title="Always route this sender to bundle"
+                    >
+                      {Object.keys(BUNDLE_META).map((bKey) => (
+                        <option key={bKey} value={bKey}>
+                          Bundle: {bKey}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      onClick={() => openReplyComposer(openEmail)}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded hover:bg-gray-200 text-xs font-medium text-gray-700"
+                      title="Reply"
+                    >
+                      <Reply className="w-4 h-4" />
+                      <span className="hidden sm:inline">Reply</span>
+                    </button>
+
+                    <button
+                      onClick={() => openForwardComposer(openEmail)}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded hover:bg-gray-200 text-xs font-medium text-gray-700"
+                      title="Forward"
+                    >
+                      <Forward className="w-4 h-4" />
+                      <span className="hidden sm:inline">Forward</span>
+                    </button>
+
+                    <div className="relative">
+                      <button
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          setSnoozePickerId(snoozePickerId === openEmail.id ? null : openEmail.id);
+                        }}
+                        className="p-2 rounded-full hover:bg-gray-200 text-gray-600"
+                        title="Snooze"
+                      >
+                        <Clock className="w-4 h-4" />
+                      </button>
+                      {snoozePickerId === openEmail.id && (
+                        <div
+                          onClick={(ev) => ev.stopPropagation()}
+                          className="absolute right-0 top-9 z-30 w-44 bg-white rounded-lg shadow-xl border border-gray-200 py-1 text-sm"
+                        >
+                          {['Later today (6 PM)', 'Tomorrow (8 AM)', 'Next week (Mon)'].map((slot) => (
+                            <button
+                              key={slot}
+                              onClick={(ev) => snoozeEmail(openEmail.id, slot, ev)}
+                              className="w-full text-left px-3 py-2 hover:bg-amber-50 text-gray-700"
+                            >
+                              {slot}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={(ev) => togglePin(openEmail.id, ev)}
+                      className={`p-2 rounded-full hover:bg-gray-200 ${openEmail.pinned ? 'text-blue-600' : 'text-gray-500'}`}
+                      title="Pin"
+                    >
+                      <Pin className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={(ev) => trashEmail(openEmail.id, ev)}
+                      className="p-2 rounded-full hover:bg-red-100 text-gray-500 hover:text-red-600"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={(ev) => markDone(openEmail.id, ev)}
+                      className="p-2 rounded-full hover:bg-emerald-100 text-emerald-600"
+                      title="Done / Archive"
+                    >
+                      <Check className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-5 sm:p-6">
+                  <h2 className="text-xl font-semibold text-gray-900 mb-3">{openEmail.subject}</h2>
+                  <div className="flex items-center justify-between text-sm text-gray-500 pb-4 mb-4 border-b border-gray-100">
+                    <div>
+                      <span className="font-semibold text-gray-800">{openEmail.senderName}</span>{' '}
+                      <span className="text-xs">&lt;{openEmail.senderEmail}&gt;</span>
+                    </div>
+                    <span className="text-xs">{openEmail.timeLabel}</span>
+                  </div>
+
+                  {openEmail.htmlBody ? (
+                    <iframe
+                      title="Email Content"
+                      srcDoc={openEmail.htmlBody}
+                      sandbox="allow-popups allow-popups-to-escape-sandbox"
+                      className="w-full min-h-[480px] border-0 rounded bg-white"
+                    />
+                  ) : (
+                    <div className="text-sm text-gray-800 whitespace-pre-line leading-relaxed">{openEmail.body}</div>
+                  )}
+
+                  <div className="mt-6 pt-4 border-t border-gray-100 flex items-center gap-3">
+                    <button
+                      onClick={() => openReplyComposer(openEmail)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full border border-gray-300 hover:bg-gray-50 text-sm font-medium text-gray-700"
+                    >
+                      <Reply className="w-4 h-4" />
+                      <span>Reply</span>
+                    </button>
+                    <button
+                      onClick={() => openForwardComposer(openEmail)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full border border-gray-300 hover:bg-gray-50 text-sm font-medium text-gray-700"
+                    >
+                      <Forward className="w-4 h-4" />
+                      <span>Forward</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : activeNav === 'inbox' ? (
+              <>
+                {buckets.map((bucket) => {
+                  const bucketItems = visibleEmails.filter((e) => e.bucket === bucket);
+                  if (bucketItems.length === 0) return null;
+
+                  const directItems = bucketItems.filter((e) => !BUNDLE_META[e.bundle]?.inlineBundle);
+                  const bundledGroups = {};
+                  bucketItems
+                    .filter((e) => BUNDLE_META[e.bundle]?.inlineBundle)
+                    .forEach((e) => {
+                      if (!bundledGroups[e.bundle]) bundledGroups[e.bundle] = [];
+                      bundledGroups[e.bundle].push(e);
+                    });
+
+                  return (
+                    <section key={bucket} className="mb-6">
+                      <div className="flex items-center justify-between px-1 mb-2">
+                        <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">{bucket}</h3>
+                        <button
+                          onClick={() => sweepBucket(bucket)}
+                          className="text-xs text-gray-400 hover:text-emerald-600 flex items-center gap-1 transition-colors"
+                        >
+                          <CheckCheck className="w-3.5 h-3.5" />
+                          <span>Sweep unpinned</span>
+                        </button>
+                      </div>
+
+                      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                        {directItems.map((email) => renderEmailRow(email, false))}
+
+                        {Object.entries(bundledGroups).map(([bundleName, items]) => {
+                          const meta = BUNDLE_META[bundleName];
+                          const Icon = meta.icon;
+                          const expandKey = `${bucket}-${bundleName}`;
+                          const isExpanded = !!expandedBundles[expandKey];
+                          const inlineDropKey = `inline-${expandKey}`;
+                          const isDragOverInline = dragOverTarget === inlineDropKey;
+
+                          return (
+                            <div key={expandKey} className="border-b border-gray-100 last:border-b-0">
+                              <div
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  setDragOverTarget(inlineDropKey);
+                                }}
+                                onDragLeave={() => setDragOverTarget(null)}
+                                onDrop={(e) => handleDropOnTarget(e, 'bundle', bundleName)}
+                                onClick={() =>
+                                  setExpandedBundles((prev) => ({ ...prev, [expandKey]: !prev[expandKey] }))
+                                }
+                                className={`group flex items-center gap-3 px-4 py-3 cursor-pointer transition-all ${
+                                  isDragOverInline
+                                    ? 'bg-blue-50 ring-2 ring-inset ring-blue-500'
+                                    : 'bg-white hover:bg-gray-50'
+                                }`}
+                              >
+                                <div
+                                  className="w-9 h-9 rounded-full flex items-center justify-center text-white shrink-0"
+                                  style={{ backgroundColor: meta.color }}
+                                >
+                                  <Icon className="w-4 h-4" />
+                                </div>
+
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-sm" style={{ color: meta.color }}>
+                                      {meta.label} ({items.length})
+                                    </span>
+                                    {isExpanded ? (
+                                      <ChevronDown className="w-4 h-4 text-gray-400" />
+                                    ) : (
+                                      <ChevronRight className="w-4 h-4 text-gray-400" />
+                                    )}
+                                    {isDragOverInline && (
+                                      <span className="text-xs font-semibold text-blue-600">
+                                        Drop to move &amp; create sender rule
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-xs text-gray-500 truncate">
+                                    {items.map((i) => i.senderName.split(',')[0]).join(', ')}
+                                  </div>
+                                </div>
+
+                                <button
+                                  title={`Sweep ${meta.label}`}
+                                  onClick={(ev) => sweepBundle(bucket, bundleName, ev)}
+                                  className="p-2 rounded-full hover:bg-emerald-100 text-emerald-600 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                                >
+                                  <CheckCheck className="w-4 h-4" />
+                                </button>
+                              </div>
+
+                              {isExpanded && (
+                                <div className="border-t border-gray-100">
+                                  {items.map((item) => renderEmailRow(item, true))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  );
+                })}
+
+                {accessToken && nextPageToken && (
+                  <div className="flex justify-center mt-4">
+                    <button
+                      onClick={() => fetchGmailMessages(accessToken, nextPageToken)}
+                      disabled={syncing}
+                      className="px-4 py-2 rounded-full bg-white border border-gray-300 shadow-sm text-xs font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      {syncing ? 'Loading...' : 'Load Older Emails (Next 100)'}
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div>
+                {activeNav === 'snoozed' && visibleEmails.length > 0 && (
+                  <div className="mb-3 flex justify-end">
+                    <button
+                      onClick={simulateWakeSnoozed}
+                      className="text-xs bg-amber-600 text-white px-3 py-1.5 rounded-full shadow-sm hover:bg-amber-700"
+                    >
+                      Simulate Time Passing (Wake Snoozed)
+                    </button>
+                  </div>
+                )}
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                  {visibleEmails.length === 0 ? (
+                    <div className="p-12 text-center text-gray-400 text-sm">
+                      All clear! Nothing here right now.
+                    </div>
+                  ) : (
+                    visibleEmails.map((email) => renderEmailRow(email, false))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
+
+      <button
+        onClick={() => {
+          setComposeForm({ mode: 'new', to: '', subject: '', body: '', threadId: null, inReplyTo: null });
+          setComposeOpen(true);
+        }}
+        className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-[#DB4437] hover:bg-[#c53929] text-white shadow-lg flex items-center justify-center transition-transform hover:scale-105 z-30"
+        style={{ marginBottom: 'env(safe-area-inset-bottom)' }}
+        title="Compose"
+      >
+        <Plus className="w-6 h-6" />
+      </button>
+
+      {ruleModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-lg w-full shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Deterministic Routing Rules (First Match Wins)</h3>
+              <button onClick={() => setRuleModalOpen(false)}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+              <p className="text-xs text-gray-500">
+                Your custom rules run first from top to bottom. Dragging any email onto a bundle automatically adds a permanent sender rule here.
+              </p>
+
+              <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={newRule.field}
+                    onChange={(e) => setNewRule({ ...newRule, field: e.target.value })}
+                    className="text-xs border border-gray-300 rounded px-2 py-1.5 bg-white"
+                  >
+                    <option value="sender">Sender contains</option>
+                    <option value="subject">Subject contains</option>
+                    <option value="any">Any text contains</option>
+                  </select>
+                  <select
+                    value={newRule.bundle}
+                    onChange={(e) => setNewRule({ ...newRule, bundle: e.target.value })}
+                    className="text-xs border border-gray-300 rounded px-2 py-1.5 bg-white"
+                  >
+                    {Object.keys(BUNDLE_META).map((b) => (
+                      <option key={b} value={b}>
+                        Route to: {b}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Keywords separated by | (e.g. receipt|invoice)"
+                    value={newRule.pattern}
+                    onChange={(e) => setNewRule({ ...newRule, pattern: e.target.value })}
+                    className="flex-1 text-xs border border-gray-300 rounded px-2.5 py-1.5"
+                  />
+                  <button
+                    onClick={() => {
+                      if (!newRule.pattern.trim()) return;
+                      setRules((prev) => [
+                        {
+                          id: `r-${Date.now()}`,
+                          name: `${newRule.pattern} -> ${newRule.bundle}`,
+                          field: newRule.field,
+                          pattern: newRule.pattern.trim(),
+                          bundle: newRule.bundle,
+                        },
+                        ...prev,
+                      ]);
+                      setNewRule({ name: '', field: 'sender', pattern: '', bundle: 'Updates' });
+                    }}
+                    className="bg-blue-600 text-white text-xs font-medium px-3 py-1.5 rounded hover:bg-blue-700"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {rules.map((r, idx) => (
+                  <div key={r.id} className="flex items-center justify-between p-2.5 border border-gray-200 rounded-lg text-xs">
+                    <div>
+                      <span className="font-bold text-gray-400 mr-2">#{idx + 1}</span>
+                      <span className="font-semibold text-gray-800">{r.bundle}</span>
+                      <span className="text-gray-500 ml-2">
+                        ({r.field}: <code className="bg-gray-100 px-1 rounded">{r.pattern}</code>)
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setRules((prev) => prev.filter((item) => item.id !== r.id))}
+                      className="text-gray-400 hover:text-red-500 p-1"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {connectModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-md w-full shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Import .EML or Connect Live Gmail</h3>
+              <button onClick={() => setConnectModalOpen(false)}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-5 space-y-5">
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">
+                  Option 1: Upload .EML Files
+                </h4>
+                <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-4 cursor-pointer hover:border-blue-500 hover:bg-blue-50/40 transition-colors">
+                  <Upload className="w-6 h-6 text-blue-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-700">Click to select .eml files (or drag anywhere)</span>
+                  <input
+                    type="file"
+                    accept=".eml"
+                    multiple
+                    onChange={(e) => e.target.files && handleEmlFiles(e.target.files)}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              <div className="border-t border-gray-100 pt-4">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">
+                  Option 2: Live Gmail API (Auto Sign-In Enabled)
+                </h4>
+                <input
+                  type="text"
+                  value={googleClientId}
+                  onChange={(e) => setGoogleClientId(e.target.value)}
+                  placeholder="Paste Google Cloud OAuth Client ID..."
+                  className="w-full text-xs border border-gray-300 rounded-lg px-3 py-2 mb-2"
+                />
+                <button
+                  onClick={() => {
+                    if (!googleClientId.trim()) {
+                      showToast('Enter your Google OAuth Client ID first');
+                      return;
+                    }
+                    localStorage.setItem('classic_inbox_client_id', googleClientId.trim());
+                    triggerGoogleAuth(googleClientId.trim(), false);
+                  }}
+                  className="w-full bg-[#4285F4] hover:bg-blue-600 text-white text-xs font-semibold py-2.5 rounded-lg transition-colors"
+                >
+                  Sign in with Google &amp; Sync All Inbox
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {composeOpen && (
+        <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-lg w-full shadow-2xl overflow-hidden">
+            <div className="px-4 py-3 bg-gray-800 text-white flex items-center justify-between">
+              <span className="text-sm font-medium">
+                {composeForm.mode === 'reply'
+                  ? 'Reply'
+                  : composeForm.mode === 'forward'
+                  ? 'Forward Message'
+                  : 'New Message'}
+              </span>
+              <button onClick={() => setComposeOpen(false)}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <input
+                type="email"
+                placeholder="To"
+                value={composeForm.to}
+                onChange={(e) => setComposeForm({ ...composeForm, to: e.target.value })}
+                className="w-full text-sm border-b border-gray-200 pb-2 focus:outline-none"
+              />
+              <input
+                type="text"
+                placeholder="Subject"
+                value={composeForm.subject}
+                onChange={(e) => setComposeForm({ ...composeForm, subject: e.target.value })}
+                className="w-full text-sm border-b border-gray-200 pb-2 focus:outline-none"
+              />
+              <textarea
+                rows={7}
+                placeholder="Write your message..."
+                value={composeForm.body}
+                onChange={(e) => setComposeForm({ ...composeForm, body: e.target.value })}
+                className="w-full text-sm focus:outline-none resize-none"
+              />
+              <div className="flex justify-end">
+                <button
+                  onClick={handleSendEmail}
+                  className="flex items-center gap-1.5 bg-[#4285F4] text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-blue-600"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{accessToken ? 'Send via Gmail' : 'Send'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-4 py-2.5 rounded-full shadow-lg z-50">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
