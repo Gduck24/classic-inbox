@@ -8,7 +8,6 @@ import {
   CheckCheck,
   Inbox as InboxIcon,
   Settings,
-  Tag,
   ChevronDown,
   ChevronRight,
   Plus,
@@ -33,9 +32,6 @@ const BUNDLE_META = {
     id: 'Primary',
     label: 'Primary',
     color: '#4285F4',
-    bgLight: 'bg-blue-50',
-    textClass: 'text-blue-600',
-    borderClass: 'border-blue-500',
     icon: Mail,
     inlineBundle: false,
   },
@@ -43,9 +39,6 @@ const BUNDLE_META = {
     id: 'Updates',
     label: 'Updates',
     color: '#FBBC05',
-    bgLight: 'bg-amber-50',
-    textClass: 'text-amber-600',
-    borderClass: 'border-amber-500',
     icon: Bell,
     inlineBundle: true,
   },
@@ -53,9 +46,6 @@ const BUNDLE_META = {
     id: 'Finance',
     label: 'Finance',
     color: '#0F9D58',
-    bgLight: 'bg-emerald-50',
-    textClass: 'text-emerald-600',
-    borderClass: 'border-emerald-600',
     icon: Landmark,
     inlineBundle: true,
   },
@@ -63,9 +53,6 @@ const BUNDLE_META = {
     id: 'Purchases',
     label: 'Purchases',
     color: '#8E24AA',
-    bgLight: 'bg-purple-50',
-    textClass: 'text-purple-600',
-    borderClass: 'border-purple-600',
     icon: ShoppingBag,
     inlineBundle: true,
   },
@@ -73,9 +60,6 @@ const BUNDLE_META = {
     id: 'Promos',
     label: 'Promos',
     color: '#00ACC1',
-    bgLight: 'bg-cyan-50',
-    textClass: 'text-cyan-600',
-    borderClass: 'border-cyan-600',
     icon: Sparkles,
     inlineBundle: true,
   },
@@ -83,9 +67,6 @@ const BUNDLE_META = {
     id: 'Social',
     label: 'Social',
     color: '#DB4437',
-    bgLight: 'bg-rose-50',
-    textClass: 'text-rose-600',
-    borderClass: 'border-rose-500',
     icon: Users,
     inlineBundle: true,
   },
@@ -93,20 +74,17 @@ const BUNDLE_META = {
     id: 'Travel',
     label: 'Travel',
     color: '#3F51B5',
-    bgLight: 'bg-indigo-50',
-    textClass: 'text-indigo-600',
-    borderClass: 'border-indigo-600',
     icon: Plane,
     inlineBundle: true,
   },
 };
 
 const DEFAULT_RULES = [
-  { id: 'r1', name: 'Kickstarter -> Updates (Never Duplicate)', field: 'sender', pattern: 'kickstarter', bundle: 'Updates' },
+  { id: 'r1', name: 'Kickstarter -> Updates', field: 'sender', pattern: 'kickstarter', bundle: 'Updates' },
   { id: 'r2', name: 'ATF eForms -> Updates', field: 'sender', pattern: 'eforms.notifications', bundle: 'Updates' },
   { id: 'r3', name: 'Invoices & Statements -> Finance', field: 'any', pattern: 'invoice|balance due|statement|payment request', bundle: 'Finance' },
   { id: 'r4', name: 'Receipts & Orders -> Purchases', field: 'any', pattern: 'receipt|order confirmation|rma|shipped', bundle: 'Purchases' },
-  { id: 'r5', name: 'Deals & Promos -> Promos', field: 'any', pattern: '% off|black friday|sale|unsubscribe', bundle: 'Promos' },
+  { id: 'r5', name: 'Deals & Promos -> Promos', field: 'any', pattern: '% off|black friday|sale|unsubscribe|offers|savings', bundle: 'Promos' },
 ];
 
 const INITIAL_EMAILS = [
@@ -117,6 +95,7 @@ const INITIAL_EMAILS = [
     subject: 'Help for long time Chevy Family - Gduck24 on GM-Trucks.com',
     snippet: 'I will be using the dealer for all of it. On Tue, Nov 17, 2026 at 9:27 AM CARS_socialmedia wrote...',
     body: 'Hi Grayson,\n\nI will be using the dealer for all of it. Thanks for reaching out regarding your 2020 Z71 and your long history with Chevy trucks.\n\nBest,\nCARS Social Media Team',
+    htmlBody: null,
     timeLabel: '10:04 AM',
     bucket: 'Today',
     status: 'inbox',
@@ -131,6 +110,7 @@ const INITIAL_EMAILS = [
     subject: 'Your 2024 GMC Sierra 1500 Awaits? Test Drive This Week',
     snippet: 'I have good credit around 800. What is an estimate of the rates and terms that you guys can provide?',
     body: 'Hi Grayson,\n\nThanks for sending over your target numbers. With an 800 score, we can lock in tier-1 financing rates. Let me know what time works best for you to stop by.',
+    htmlBody: null,
     timeLabel: '10:05 AM',
     bucket: 'Today',
     status: 'inbox',
@@ -138,105 +118,42 @@ const INITIAL_EMAILS = [
     snoozedUntil: null,
     unread: true,
   },
-  {
-    id: 'e3',
-    senderName: 'Ratliffs Mobile RV',
-    senderEmail: 'billing@ratliffsmobilerv.com',
-    subject: 'New payment request from Ratliffs Mobile RV - invoice 1166',
-    snippet: 'Your invoice is ready! BALANCE DUE $900.00 View and pay Dear Grayson Murdock, Thank you for choosing...',
-    body: 'Dear Grayson Murdock,\n\nYour invoice #1166 is ready for review.\nBalance Due: $900.00\n\nThank you for your business!',
-    timeLabel: '9:15 AM',
-    bucket: 'Today',
-    status: 'inbox',
-    pinned: false,
-    snoozedUntil: null,
-    unread: true,
-  },
-  {
-    id: 'e4',
-    senderName: 'eForms Notifications',
-    senderEmail: 'eforms.notifications@atf.gov',
-    subject: 'eForms Application Submission Notification for Permit/Control No: 2027147105',
-    snippet: 'This is to advise you that the status of your eForms submission with the subject Permit/Control n...',
-    body: 'This is to advise you that the status of your eForms Form 1 submission (Control No: 2027147105) has been updated to SUBMITTED/IN PROCESS.',
-    timeLabel: '8:40 AM',
-    bucket: 'Today',
-    status: 'inbox',
-    pinned: false,
-    snoozedUntil: null,
-    unread: true,
-  },
-  {
-    id: 'e5',
-    senderName: 'Dylan, me',
-    senderEmail: 'dylan@autobodyfortworth.com',
-    subject: 'Vehicle arrival and status.',
-    snippet: 'It was a junkyard replacement and you guys made me a deal on labor because of circumstances of it failing at 102k...',
-    body: 'Hey Grayson,\n\nThe replacement assembly arrived on the morning freight truck. We will get it on the lift this afternoon and send photos.',
-    timeLabel: 'Yesterday',
-    bucket: 'Yesterday',
-    status: 'inbox',
-    pinned: false,
-    snoozedUntil: null,
-    unread: false,
-  },
-  {
-    id: 'e6',
-    senderName: 'Kickstarter',
-    senderEmail: 'no-reply@kickstarter.com',
-    subject: 'Project Update #11: Machina MagIC Snowboard Ride System by Brendan Walker',
-    snippet: 'One More Sizing Opportunity - Hey Machina Crew! Thanks again for the support and understanding...',
-    body: 'Hey Machina Crew!\n\nThanks again for the support and understanding as we finalize production sizing before our Utah & Colorado winter shipments.',
-    timeLabel: 'Yesterday',
-    bucket: 'Yesterday',
-    status: 'inbox',
-    pinned: false,
-    snoozedUntil: null,
-    unread: true,
-  },
-  {
-    id: 'e7',
-    senderName: 'Customer Support',
-    senderEmail: 'support@equipmentrma.com',
-    subject: 'Blowers RMA Created R1-SO21168408',
-    snippet: 'RMA Request Dear Grayson Murdock, Your repair request has been submitted successfully. RMA Details Sr.#...',
-    body: 'Dear Grayson Murdock,\n\nYour repair RMA #R1-SO21168408 has been created. Use the attached prepaid shipping label to return the unit.',
-    timeLabel: 'Nov 12',
-    bucket: 'Earlier this month',
-    status: 'inbox',
-    pinned: false,
-    snoozedUntil: null,
-    unread: false,
-  },
-  {
-    id: 'e8',
-    senderName: 'MARS Towing & Recovery',
-    senderEmail: 'receipts@squareup.com',
-    subject: 'Receipt from MARS Towing & Recovery #Fqwo',
-    snippet: 'Receipt for $232.88 at MARS Towing & Recovery. Square automatically sends receipts to the email ad...',
-    body: 'MARS Towing & Recovery\nTotal Paid: $232.88\nCard ending in 4019\nThank you!',
-    timeLabel: 'Nov 10',
-    bucket: 'Earlier this month',
-    status: 'inbox',
-    pinned: false,
-    snoozedUntil: null,
-    unread: false,
-  },
-  {
-    id: 'e9',
-    senderName: 'OMRE',
-    senderEmail: 'hello@omre.co',
-    subject: 'Up To 30% Off Starts Now! - Your healthiest Black Friday yet',
-    snippet: 'Can’t see this email? View in your browser. Black Friday Early Access starts today...',
-    body: 'Save up to 30% sitewide during our Black Friday Early Access event. Click here to unsubscribe.',
-    timeLabel: 'Nov 14',
-    bucket: 'Earlier this month',
-    status: 'inbox',
-    pinned: false,
-    snoozedUntil: null,
-    unread: true,
-  },
 ];
+
+function decodeBase64Url(data) {
+  if (!data) return '';
+  try {
+    const base64 = data.replace(/-/g, '+').replace(/_/g, '/');
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new TextDecoder('utf-8').decode(bytes);
+  } catch {
+    return '';
+  }
+}
+
+function extractGmailBodies(payload) {
+  let plain = '';
+  let html = '';
+
+  const walk = (part) => {
+    if (!part) return;
+    if (part.mimeType === 'text/plain' && part.body?.data && !plain) {
+      plain = decodeBase64Url(part.body.data);
+    } else if (part.mimeType === 'text/html' && part.body?.data && !html) {
+      html = decodeBase64Url(part.body.data);
+    }
+    if (Array.isArray(part.parts)) {
+      part.parts.forEach(walk);
+    }
+  };
+
+  walk(payload);
+  return { plain, html };
+}
 
 function classifyEmail(email, rules) {
   if (email.manualBundle && BUNDLE_META[email.manualBundle]) {
@@ -244,7 +161,7 @@ function classifyEmail(email, rules) {
   }
   const senderStr = `${email.senderName} ${email.senderEmail}`.toLowerCase();
   const subjectStr = (email.subject || '').toLowerCase();
-  const anyStr = `${senderStr} ${subjectStr} ${(email.snippet || '').toLowerCase()}`;
+  const anyStr = `${senderStr} ${subjectStr} ${(email.snippet || '').toLowerCase()} ${(email.body || '').toLowerCase()}`;
 
   for (const rule of rules) {
     if (!rule.pattern?.trim()) continue;
@@ -287,20 +204,18 @@ function parseEmlContent(rawText, fileName) {
   const emailMatch = from.match(/<([^>]+)>/);
   const senderEmail = emailMatch ? emailMatch[1] : from;
   const senderName = emailMatch ? from.replace(/<[^>]+>/, '').replace(/"/g, '').trim() || senderEmail : from;
-  const body = lines
-    .slice(bodyStartIdx)
-    .join('\n')
-    .replace(/<[^>]*>?/gm, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const rawBody = lines.slice(bodyStartIdx).join('\n').trim();
+  const isHtml = /<html|<body|<div|<table/i.test(rawBody);
+  const plainText = rawBody.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
 
   return {
     id: `eml-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     senderName,
     senderEmail,
     subject,
-    snippet: body.slice(0, 140) || '(No preview text)',
-    body: body || '(Empty message body)',
+    snippet: plainText.slice(0, 140) || '(No preview text)',
+    body: plainText || '(Empty message body)',
+    htmlBody: isHtml ? rawBody : null,
     timeLabel: 'Just now',
     bucket: 'Today',
     status: 'inbox',
@@ -376,7 +291,7 @@ export default function App() {
     return classifiedEmails.filter((e) => {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const hay = `${e.senderName} ${e.senderEmail} ${e.subject} ${e.snippet}`.toLowerCase();
+        const hay = `${e.senderName} ${e.senderEmail} ${e.subject} ${e.snippet} ${e.body}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       if (activeNav === 'inbox') {
@@ -497,34 +412,54 @@ export default function App() {
           if (tokenResponse?.access_token) {
             setGmailConnected(true);
             setConnectModalOpen(false);
-            showToast('Connected to Gmail! Fetching recent threads...');
+            showToast('Connected to Gmail! Downloading full threads...');
             try {
               const listRes = await fetch(
-                'https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=15&q=in:inbox',
+                'https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=25&q=in:inbox',
                 { headers: { Authorization: `Bearer ${tokenResponse.access_token}` } }
               );
               const listData = await listRes.json();
               if (listData.messages) {
+                const now = new Date();
+                const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                const startOfYesterday = startOfToday - 86400000;
+
                 const fetched = await Promise.all(
                   listData.messages.map(async (m) => {
                     const msgRes = await fetch(
-                      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`,
+                      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`,
                       { headers: { Authorization: `Bearer ${tokenResponse.access_token}` } }
                     );
                     const msgData = await msgRes.json();
                     const headers = msgData.payload?.headers || [];
-                    const from = headers.find((h) => h.name === 'From')?.value || 'Gmail Sender';
-                    const subject = headers.find((h) => h.name === 'Subject')?.value || '(No Subject)';
+                    const from = headers.find((h) => h.name.toLowerCase() === 'from')?.value || 'Gmail Sender';
+                    const subject = headers.find((h) => h.name.toLowerCase() === 'subject')?.value || '(No Subject)';
+                    const internalTs = Number(msgData.internalDate || Date.now());
+                    const msgDate = new Date(internalTs);
+
+                    let bucket = 'Earlier this month';
+                    let timeLabel = msgDate.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                    if (internalTs >= startOfToday) {
+                      bucket = 'Today';
+                      timeLabel = msgDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                    } else if (internalTs >= startOfYesterday) {
+                      bucket = 'Yesterday';
+                      timeLabel = 'Yesterday';
+                    }
+
+                    const { plain, html } = extractGmailBodies(msgData.payload);
                     const emailMatch = from.match(/<([^>]+)>/);
+
                     return {
                       id: `gmail-${m.id}`,
                       senderName: emailMatch ? from.replace(/<[^>]+>/, '').replace(/"/g, '').trim() : from,
                       senderEmail: emailMatch ? emailMatch[1] : from,
                       subject,
                       snippet: msgData.snippet || '',
-                      body: msgData.snippet || '',
-                      timeLabel: 'Today',
-                      bucket: 'Today',
+                      body: plain || msgData.snippet || '(No plain-text body)',
+                      htmlBody: html || null,
+                      timeLabel,
+                      bucket,
                       status: 'inbox',
                       pinned: false,
                       snoozedUntil: null,
@@ -533,7 +468,7 @@ export default function App() {
                   })
                 );
                 setEmails(fetched);
-                showToast(`Loaded ${fetched.length} live Gmail threads`);
+                showToast(`Synced ${fetched.length} full Gmail messages`);
               }
             } catch {
               showToast('Connected, but could not fetch messages');
@@ -613,7 +548,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Quick triage actions */}
         <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
           <button
             title="Pin to Inbox"
@@ -686,7 +620,6 @@ export default function App() {
       className="h-full flex flex-col bg-[#f2f2f2] overflow-hidden"
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
-      {/* Top App Bar */}
       <header className={`${headerColor} text-white shadow-md px-3 sm:px-5 h-14 flex items-center justify-between gap-3 shrink-0 transition-colors`}>
         <div className="flex items-center gap-3">
           <button
@@ -707,7 +640,6 @@ export default function App() {
           </span>
         </div>
 
-        {/* Search */}
         <div className="flex-1 max-w-xl">
           <div className="relative flex items-center bg-white/20 focus-within:bg-white focus-within:text-gray-900 rounded-md px-3 py-1.5 transition-colors">
             <Search className="w-4 h-4 mr-2 opacity-80 shrink-0" />
@@ -726,7 +658,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Pinned Toggle & Connect */}
         <div className="flex items-center gap-2 shrink-0">
           {activeNav === 'inbox' && (
             <button
@@ -745,14 +676,12 @@ export default function App() {
             className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-full text-xs font-medium transition-colors"
           >
             <KeyRound className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">{gmailConnected ? 'Gmail Live' : 'Connect / .EML'}</span>
+            <span className="hidden md:inline">{gmailConnected ? 'Sync Gmail' : 'Connect / .EML'}</span>
           </button>
         </div>
       </header>
 
-      {/* Main Body */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Navigation Drawer */}
         {sidebarOpen && (
           <aside className="w-60 bg-white border-r border-gray-200 flex flex-col justify-between py-3 shrink-0 z-20 absolute md:static inset-y-0 left-0 shadow-lg md:shadow-none">
             <div className="overflow-y-auto px-2 space-y-1">
@@ -827,11 +756,9 @@ export default function App() {
           </aside>
         )}
 
-        {/* Main Content Stream */}
         <main className="flex-1 overflow-y-auto px-2 sm:px-6 py-4">
           <div className="max-w-4xl mx-auto pb-20">
             {openEmail ? (
-              /* Reading Pane */
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2 bg-gray-50">
                   <button
@@ -877,11 +804,20 @@ export default function App() {
                     </div>
                     <span className="text-xs">{openEmail.timeLabel}</span>
                   </div>
-                  <div className="text-sm text-gray-800 whitespace-pre-line leading-relaxed">{openEmail.body}</div>
+
+                  {openEmail.htmlBody ? (
+                    <iframe
+                      title="Email Content"
+                      srcDoc={openEmail.htmlBody}
+                      sandbox="allow-popups allow-popups-to-escape-sandbox"
+                      className="w-full min-h-[520px] border-0 rounded bg-white"
+                    />
+                  ) : (
+                    <div className="text-sm text-gray-800 whitespace-pre-line leading-relaxed">{openEmail.body}</div>
+                  )}
                 </div>
               </div>
             ) : activeNav === 'inbox' ? (
-              /* Grouped Chronological Timeline with Inline Bundles */
               buckets.map((bucket) => {
                 const bucketItems = visibleEmails.filter((e) => e.bucket === bucket);
                 if (bucketItems.length === 0) return null;
@@ -909,10 +845,8 @@ export default function App() {
                     </div>
 
                     <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                      {/* Direct Primary / Pinned Conversations */}
                       {directItems.map((email) => renderEmailRow(email, false))}
 
-                      {/* Inline Collapsible Bundle Cards */}
                       {Object.entries(bundledGroups).map(([bundleName, items]) => {
                         const meta = BUNDLE_META[bundleName];
                         const Icon = meta.icon;
@@ -972,7 +906,6 @@ export default function App() {
                 );
               })
             ) : (
-              /* Flat View for Snoozed, Done, or Single Bundle */
               <div>
                 {activeNav === 'snoozed' && visibleEmails.length > 0 && (
                   <div className="mb-3 flex justify-end">
@@ -999,7 +932,6 @@ export default function App() {
         </main>
       </div>
 
-      {/* Red Floating Compose Button */}
       <button
         onClick={() => setComposeOpen(true)}
         className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-[#DB4437] hover:bg-[#c53929] text-white shadow-lg flex items-center justify-center transition-transform hover:scale-105 z-30"
@@ -1009,7 +941,6 @@ export default function App() {
         <Plus className="w-6 h-6" />
       </button>
 
-      {/* Routing Rules Modal */}
       {ruleModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-lg w-full shadow-2xl overflow-hidden">
@@ -1024,7 +955,6 @@ export default function App() {
                 Rules run from top to bottom. As soon as an email matches one rule, it stops—preventing duplicates across sections.
               </p>
 
-              {/* Add Rule Form */}
               <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 space-y-2">
                 <div className="grid grid-cols-2 gap-2">
                   <select
@@ -1078,7 +1008,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Active Rule List */}
               <div className="space-y-2">
                 {rules.map((r, idx) => (
                   <div key={r.id} className="flex items-center justify-between p-2.5 border border-gray-200 rounded-lg text-xs">
@@ -1103,7 +1032,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Connect Gmail / Import .EML Modal */}
       {connectModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-md w-full shadow-2xl overflow-hidden">
@@ -1154,7 +1082,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Compose Modal */}
       {composeOpen && (
         <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-md w-full shadow-2xl overflow-hidden">
@@ -1204,7 +1131,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Toast Notification */}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-4 py-2.5 rounded-full shadow-lg z-50">
           {toast}
