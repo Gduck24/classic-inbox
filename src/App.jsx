@@ -34,69 +34,29 @@ import {
   AlignJustify,
   StickyNote,
   FolderPlus,
-  CheckCircle2,
+  BellRing,
 } from 'lucide-react';
 
-const BUILTIN_BUNDLES = {
-  Primary: {
-    id: 'Primary',
-    label: 'Primary',
-    color: '#4285F4',
-    icon: Mail,
-    inlineBundle: false,
-    builtIn: true,
-  },
-  Updates: {
-    id: 'Updates',
-    label: 'Updates',
-    color: '#FBBC05',
-    icon: Bell,
-    inlineBundle: true,
-    builtIn: true,
-  },
-  Finance: {
-    id: 'Finance',
-    label: 'Finance',
-    color: '#0F9D58',
-    icon: Landmark,
-    inlineBundle: true,
-    builtIn: true,
-  },
-  Purchases: {
-    id: 'Purchases',
-    label: 'Purchases',
-    color: '#8E24AA',
-    icon: ShoppingBag,
-    inlineBundle: true,
-    builtIn: true,
-  },
-  Promos: {
-    id: 'Promos',
-    label: 'Promos',
-    color: '#00ACC1',
-    icon: Sparkles,
-    inlineBundle: true,
-    builtIn: true,
-  },
-  Social: {
-    id: 'Social',
-    label: 'Social',
-    color: '#DB4437',
-    icon: Users,
-    inlineBundle: true,
-    builtIn: true,
-  },
-  Travel: {
-    id: 'Travel',
-    label: 'Travel',
-    color: '#3F51B5',
-    icon: Plane,
-    inlineBundle: true,
-    builtIn: true,
-  },
+const ICON_MAP = {
+  Mail,
+  Bell,
+  Landmark,
+  ShoppingBag,
+  Sparkles,
+  Users,
+  Plane,
+  BellRing,
 };
 
-const CUSTOM_COLORS = ['#E91E63', '#009688', '#FF5722', '#673AB7', '#795548', '#607D8B'];
+const DEFAULT_BUNDLES = [
+  { id: 'Primary', label: 'Primary', color: '#4285F4', iconName: 'Mail', inlineBundle: false, custom: false },
+  { id: 'Updates', label: 'Updates', color: '#FBBC05', iconName: 'Bell', inlineBundle: true, custom: false },
+  { id: 'Finance', label: 'Finance', color: '#0F9D58', iconName: 'Landmark', inlineBundle: true, custom: false },
+  { id: 'Purchases', label: 'Purchases', color: '#8E24AA', iconName: 'ShoppingBag', inlineBundle: true, custom: false },
+  { id: 'Promos', label: 'Promos', color: '#00ACC1', iconName: 'Sparkles', inlineBundle: true, custom: false },
+  { id: 'Social', label: 'Social', color: '#DB4437', iconName: 'Users', inlineBundle: true, custom: false },
+  { id: 'Travel', label: 'Travel', color: '#3F51B5', iconName: 'Plane', inlineBundle: true, custom: false },
+];
 
 const DEFAULT_RULES = [
   { id: 'r1', name: 'Kickstarter -> Updates', field: 'sender', pattern: 'kickstarter', bundle: 'Updates' },
@@ -120,13 +80,13 @@ const INITIAL_EMAILS = [
     snippet: 'I will be using the dealer for all of it. On Tue, Nov 17, 2026 at 9:27 AM CARS_socialmedia wrote...',
     body: 'Hi Grayson,\n\nI will be using the dealer for all of it. Thanks for reaching out regarding your 2020 Z71 and your long history with Chevy trucks.\n\nBest,\nCARS Social Media Team',
     htmlBody: null,
-    note: '',
+    note: 'Confirm dealer warranty coverage before Friday',
     timeLabel: '10:04 AM',
     bucket: 'Today',
     status: 'inbox',
-    doneAt: null,
     pinned: true,
     snoozedUntil: null,
+    completedAt: null,
     unread: true,
   },
   {
@@ -146,9 +106,9 @@ const INITIAL_EMAILS = [
     timeLabel: '10:05 AM',
     bucket: 'Today',
     status: 'inbox',
-    doneAt: null,
     pinned: false,
     snoozedUntil: null,
+    completedAt: null,
     unread: true,
   },
 ];
@@ -197,9 +157,9 @@ function extractGmailBodies(payload) {
   return { plain, html };
 }
 
-function classifyEmail(email, rules, allBundles) {
+function classifyEmail(email, rules, bundleMap) {
   if (email.isReminder) return 'Primary';
-  if (email.manualBundle && allBundles[email.manualBundle]) {
+  if (email.manualBundle && bundleMap[email.manualBundle]) {
     return email.manualBundle;
   }
 
@@ -208,7 +168,7 @@ function classifyEmail(email, rules, allBundles) {
   const anyStr = `${senderStr} ${subjectStr} ${(email.snippet || '').toLowerCase()}`;
 
   for (const rule of rules) {
-    if (!rule.pattern?.trim() || !allBundles[rule.bundle]) continue;
+    if (!rule.pattern?.trim() || !bundleMap[rule.bundle]) continue;
     const tokens = rule.pattern
       .toLowerCase()
       .split('|')
@@ -228,9 +188,9 @@ function classifyEmail(email, rules, allBundles) {
   }
 
   const labels = email.gmailLabels || [];
-  if (labels.includes('CATEGORY_UPDATES')) return 'Updates';
-  if (labels.includes('CATEGORY_PROMOTIONS')) return 'Promos';
-  if (labels.includes('CATEGORY_SOCIAL')) return 'Social';
+  if (labels.includes('CATEGORY_UPDATES') && bundleMap['Updates']) return 'Updates';
+  if (labels.includes('CATEGORY_PROMOTIONS') && bundleMap['Promos']) return 'Promos';
+  if (labels.includes('CATEGORY_SOCIAL') && bundleMap['Social']) return 'Social';
 
   return 'Primary';
 }
@@ -275,14 +235,23 @@ function parseEmlContent(rawText, fileName) {
     timeLabel: 'Just now',
     bucket: 'Today',
     status: 'inbox',
-    doneAt: null,
     pinned: false,
     snoozedUntil: null,
+    completedAt: null,
     unread: true,
   };
 }
 
 export default function App() {
+  const [bundles, setBundles] = useState(() => {
+    try {
+      const saved = localStorage.getItem('classic_inbox_bundles_v1');
+      return saved ? JSON.parse(saved) : DEFAULT_BUNDLES;
+    } catch {
+      return DEFAULT_BUNDLES;
+    }
+  });
+
   const [emails, setEmails] = useState(() => {
     try {
       const saved = localStorage.getItem('classic_inbox_emails_v1');
@@ -290,302 +259,3 @@ export default function App() {
     } catch {
       return INITIAL_EMAILS;
     }
-  });
-
-  const [rules, setRules] = useState(() => {
-    try {
-      const saved = localStorage.getItem('classic_inbox_rules_v1');
-      return saved ? JSON.parse(saved) : DEFAULT_RULES;
-    } catch {
-      return DEFAULT_RULES;
-    }
-  });
-
-  const [customBundles, setCustomBundles] = useState(() => {
-    try {
-      const saved = localStorage.getItem('classic_inbox_custom_bundles_v1');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('classic_inbox_dark') === 'true');
-  const [compactMode, setCompactMode] = useState(() => localStorage.getItem('classic_inbox_compact') === 'true');
-
-  const [activeNav, setActiveNav] = useState('inbox');
-  const [sidebarOpen, setSidebarOpen] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= 768 : true
-  );
-  const [pinnedOnly, setPinnedOnly] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [expandedBundles, setExpandedBundles] = useState({});
-  const [openEmailId, setOpenEmailId] = useState(null);
-  const [snoozePickerId, setSnoozePickerId] = useState(null);
-  const [ruleModalOpen, setRuleModalOpen] = useState(false);
-  const [bundleModalOpen, setBundleModalOpen] = useState(false);
-  const [reminderModalOpen, setReminderModalOpen] = useState(false);
-  const [connectModalOpen, setConnectModalOpen] = useState(false);
-  const [composeOpen, setComposeOpen] = useState(false);
-  const [fabMenuOpen, setFabMenuOpen] = useState(false);
-  const [toast, setToast] = useState(null);
-  const [syncing, setSyncing] = useState(false);
-  const [nextPageToken, setNextPageToken] = useState(null);
-
-  // Drag-and-drop & Mobile touch swipe states
-  const [draggedEmailId, setDraggedEmailId] = useState(null);
-  const [dragOverTarget, setDragOverTarget] = useState(null);
-  const touchStartRef = useRef({ id: null, x: 0, y: 0 });
-  const [swipeOffset, setSwipeOffset] = useState({ id: null, dx: 0 });
-
-  // Form states
-  const [newRule, setNewRule] = useState({ name: '', field: 'sender', pattern: '', bundle: 'Updates' });
-  const [newBundleName, setNewBundleName] = useState('');
-  const [newBundleColor, setNewBundleColor] = useState(CUSTOM_COLORS[0]);
-  const [newReminderText, setNewReminderText] = useState('');
-  const [noteDraft, setNoteDraft] = useState('');
-
-  const [googleClientId, setGoogleClientId] = useState(() => localStorage.getItem('classic_inbox_client_id') || '');
-  const [accessToken, setAccessToken] = useState(() => {
-    const savedToken = localStorage.getItem('classic_inbox_token');
-    const expiry = Number(localStorage.getItem('classic_inbox_token_expiry') || 0);
-    if (savedToken && Date.now() < expiry - 60000) {
-      return savedToken;
-    }
-    return null;
-  });
-
-  const [composeForm, setComposeForm] = useState({
-    mode: 'new',
-    to: '',
-    subject: '',
-    body: '',
-    threadId: null,
-    inReplyTo: null,
-  });
-
-  const allBundles = useMemo(() => {
-    const map = { ...BUILTIN_BUNDLES };
-    customBundles.forEach((cb) => {
-      map[cb.id] = {
-        id: cb.id,
-        label: cb.label,
-        color: cb.color,
-        icon: Bell,
-        inlineBundle: true,
-        builtIn: false,
-      };
-    });
-    return map;
-  }, [customBundles]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('classic_inbox_emails_v1', JSON.stringify(emails));
-    } catch {}
-  }, [emails]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('classic_inbox_rules_v1', JSON.stringify(rules));
-    } catch {}
-  }, [rules]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('classic_inbox_custom_bundles_v1', JSON.stringify(customBundles));
-    } catch {}
-  }, [customBundles]);
-
-  useEffect(() => {
-    localStorage.setItem('classic_inbox_dark', String(darkMode));
-  }, [darkMode]);
-
-  useEffect(() => {
-    localStorage.setItem('classic_inbox_compact', String(compactMode));
-  }, [compactMode]);
-
-  const showToast = (msg) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 3400);
-  };
-
-  const fetchGmailMessages = useCallback(
-    async (token, pageToken = null) => {
-      if (!token) return;
-      setSyncing(true);
-      try {
-        const url = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages');
-        url.searchParams.set('maxResults', '100');
-        url.searchParams.set('q', 'in:inbox');
-        if (pageToken) url.searchParams.set('pageToken', pageToken);
-
-        const listRes = await fetch(url.toString(), {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (listRes.status === 401) {
-          localStorage.removeItem('classic_inbox_token');
-          localStorage.removeItem('classic_inbox_token_expiry');
-          setAccessToken(null);
-          setSyncing(false);
-          return;
-        }
-
-        const listData = await listRes.json();
-        setNextPageToken(listData.nextPageToken || null);
-
-        if (listData.messages) {
-          const now = new Date();
-          const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-          const startOfYesterday = startOfToday - 86400000;
-
-          const fetched = [];
-          for (let i = 0; i < listData.messages.length; i += 20) {
-            const chunk = listData.messages.slice(i, i + 20);
-            const chunkResults = await Promise.all(
-              chunk.map(async (m) => {
-                const msgRes = await fetch(
-                  `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`,
-                  { headers: { Authorization: `Bearer ${token}` } }
-                );
-                const msgData = await msgRes.json();
-                const headers = msgData.payload?.headers || [];
-                const from = headers.find((h) => h.name.toLowerCase() === 'from')?.value || 'Gmail Sender';
-                const subject = headers.find((h) => h.name.toLowerCase() === 'subject')?.value || '(No Subject)';
-                const messageIdHeader = headers.find((h) => h.name.toLowerCase() === 'message-id')?.value || null;
-                const internalTs = Number(msgData.internalDate || Date.now());
-                const msgDate = new Date(internalTs);
-
-                let bucket = 'Earlier this month';
-                let timeLabel = msgDate.toLocaleDateString([], { month: 'short', day: 'numeric' });
-                if (internalTs >= startOfToday) {
-                  bucket = 'Today';
-                  timeLabel = msgDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-                } else if (internalTs >= startOfYesterday) {
-                  bucket = 'Yesterday';
-                  timeLabel = 'Yesterday';
-                }
-
-                const { plain, html } = extractGmailBodies(msgData.payload);
-                const emailMatch = from.match(/<([^>]+)>/);
-                const labelIds = msgData.labelIds || [];
-
-                return {
-                  id: `gmail-${m.id}`,
-                  isReminder: false,
-                  gmailId: m.id,
-                  threadId: msgData.threadId || null,
-                  messageIdHeader,
-                  gmailLabels: labelIds,
-                  senderName: emailMatch ? from.replace(/<[^>]+>/, '').replace(/"/g, '').trim() : from,
-                  senderEmail: emailMatch ? emailMatch[1] : from,
-                  subject,
-                  snippet: msgData.snippet || '',
-                  body: plain || msgData.snippet || '(No plain-text body)',
-                  htmlBody: html || null,
-                  note: '',
-                  timeLabel,
-                  bucket,
-                  status: 'inbox',
-                  doneAt: null,
-                  pinned: false,
-                  snoozedUntil: null,
-                  unread: labelIds.includes('UNREAD'),
-                };
-              })
-            );
-            fetched.push(...chunkResults);
-          }
-
-          setEmails((prev) => {
-            const reminders = prev.filter((item) => item.isReminder);
-            const existingMap = new Map(prev.map((item) => [item.id, item]));
-            const merged = fetched.map((f) => {
-              const old = existingMap.get(f.id);
-              return old
-                ? {
-                    ...f,
-                    pinned: old.pinned,
-                    status: old.status === 'snoozed' ? 'snoozed' : 'inbox',
-                    snoozedUntil: old.snoozedUntil,
-                    manualBundle: old.manualBundle,
-                    note: old.note || '',
-                  }
-                : f;
-            });
-            if (pageToken) {
-              const newIds = new Set(merged.map((m) => m.id));
-              return [...prev.filter((p) => !newIds.has(p.id)), ...merged];
-            }
-            return [...reminders, ...merged];
-          });
-
-          showToast(`Synced ${fetched.length} inbox emails`);
-        }
-      } catch {
-        showToast('Sync interrupted—try refreshing');
-      } finally {
-        setSyncing(false);
-      }
-    },
-    []
-  );
-
-  const triggerGoogleAuth = useCallback(
-    (clientIdToUse, silent = false) => {
-      if (!clientIdToUse?.trim()) return;
-      const runInit = () => {
-        if (!window.google?.accounts?.oauth2) return;
-        const client = window.google.accounts.oauth2.initTokenClient({
-          client_id: clientIdToUse.trim(),
-          scope: 'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send',
-          prompt: silent ? '' : 'consent',
-          callback: (tokenResponse) => {
-            if (tokenResponse?.access_token) {
-              const expiresInSec = Number(tokenResponse.expires_in || 3500);
-              localStorage.setItem('classic_inbox_token', tokenResponse.access_token);
-              localStorage.setItem('classic_inbox_token_expiry', String(Date.now() + expiresInSec * 1000));
-              setAccessToken(tokenResponse.access_token);
-              setConnectModalOpen(false);
-              fetchGmailMessages(tokenResponse.access_token);
-            }
-          },
-        });
-        client.requestAccessToken();
-      };
-
-      const scriptId = 'google-gis-script';
-      if (!document.getElementById(scriptId)) {
-        const s = document.createElement('script');
-        s.id = scriptId;
-        s.src = 'https://accounts.google.com/gsi/client';
-        s.async = true;
-        s.onload = runInit;
-        document.body.appendChild(s);
-      } else {
-        runInit();
-      }
-    },
-    [fetchGmailMessages]
-  );
-
-  useEffect(() => {
-    if (accessToken) {
-      fetchGmailMessages(accessToken);
-    } else if (googleClientId) {
-      triggerGoogleAuth(googleClientId, true);
-    }
-  }, []);
-
-  const classifiedEmails = useMemo(() => {
-    return emails.map((e) => ({
-      ...e,
-      bundle: classifyEmail(e, rules, allBundles),
-    }));
-  }, [emails, rules, allBundles]);
-
-  const visibleEmails = useMemo(() => {
-    const filtered = classifiedEmails.filter((e) => {
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
